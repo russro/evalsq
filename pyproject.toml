@@ -1,7 +1,7 @@
 [project]
 name = "evalsq"
 version = "0.1.0"
-description = "Benchmark evaluation heuristics demo — eval2 workshop"
+description = "Benchmark evaluation heuristics demo for the eval2 workshop"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
