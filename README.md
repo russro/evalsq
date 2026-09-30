@@ -14,6 +14,10 @@ uv run pytest      # offline, uses synthetic data
 
 `uv run evalsq --help` lists the options (`--cutoff` sets the train/test year, `--no-plots` skips the figures).
 
+The default run takes about 15 seconds on 8 cores. `uv run evalsq --grid 25` adds the winner's-curse backup (25 GBM configs) and still finishes in under a minute. Months run in parallel; `--jobs 1` forces a serial run, and the code drops to serial on its own if the worker pool fails.
+
+The monthly deployment only sees money that is already confirmed. Labels show up `--lag` trading days late (default 21), so both retraining and model selection at month start t use rows up to t−L.
+
 ## Figures
 
 ### Setup

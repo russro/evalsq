@@ -3,3 +3,4 @@ __pycache__/
 .pytest_cache/
 spy_daily.csv
 results/
+logs/
