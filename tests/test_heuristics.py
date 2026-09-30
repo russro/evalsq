@@ -5,7 +5,7 @@ import pandas as pd
 import pytest
 
 from evalsq.heuristics import (
-    _score, h1_correlation, h1_rolling, h1_validity,
+    METRICS, _metrics, _score, h1_correlation, h1_rolling, h1_summary, h1_validity,
     h2_rank_flips, h2_temporal, h3_meta,
 )
 from evalsq.models import fit_models, train_test_split_by_year
@@ -41,6 +41,29 @@ def test_h1_shape_and_ranges(fitted):
     assert set(h1["model"]) == set(models)
     assert h1["accuracy"].between(0, 1).all()
     assert -1 <= h1_correlation(h1) <= 1
+
+
+def test_metrics_perfect_and_inverted():
+    w = pd.DataFrame({"next_ret": [0.01, -0.02, 0.03, -0.01, 0.02, -0.03],
+                      "ma50": [-0.1, -0.1, -0.1, 0.1, 0.1, 0.1]})
+    w["target"] = (w["next_ret"] > 0).astype(int)
+    y = w["target"].values
+    good = _metrics(y, np.where(y == 1, 0.9, 0.1), w)
+    bad = _metrics(1 - y, np.where(y == 1, 0.1, 0.9), w)
+    assert set(good) == set(METRICS)
+    assert good["accuracy"] == good["auc"] == good["bull_acc"] == good["bear_acc"] == 1.0
+    assert bad["accuracy"] == bad["auc"] == 0.0
+    assert good["neg_logloss"] > bad["neg_logloss"]
+
+
+def test_h1_all_metrics_and_summary(fitted):
+    test, scaler, models = fitted
+    h1 = h1_validity(test, scaler, models)
+    roll = h1_rolling(h1, window=12)
+    assert set(roll["metric"]) <= set(METRICS)
+    summary = h1_summary(h1, roll)
+    assert list(summary["metric"]) == METRICS
+    assert summary["pooled_corr"].between(-1, 1).all()
 
 
 def test_h1_rolling(fitted):

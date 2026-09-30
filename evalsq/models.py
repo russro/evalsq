@@ -31,5 +31,10 @@ def predict(model, scaler: StandardScaler, df: pd.DataFrame):
     return model.predict(scaler.transform(df[FEATURES]))
 
 
+def predict_proba(model, scaler: StandardScaler, df: pd.DataFrame):
+    """P(next day up)."""
+    return model.predict_proba(scaler.transform(df[FEATURES]))[:, 1]
+
+
 def accuracy(model, scaler: StandardScaler, df: pd.DataFrame) -> float:
     return float((predict(model, scaler, df) == df["target"]).mean())

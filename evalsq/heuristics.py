@@ -8,11 +8,11 @@ import numpy as np
 import pandas as pd
 from sklearn.linear_model import LinearRegression
 from sklearn.model_selection import LeaveOneOut, cross_val_predict
-from sklearn.metrics import r2_score
+from sklearn.metrics import log_loss, r2_score, roc_auc_score
 from sklearn.preprocessing import StandardScaler
 
 from .data import FEATURES
-from .models import make_models, predict
+from .models import make_models, predict, predict_proba
 
 ANNUAL = np.sqrt(252)
 
@@ -27,35 +27,71 @@ def _score(preds: np.ndarray, w: pd.DataFrame) -> tuple[float, float]:
 
 # ── H1: Benchmark Validity Modeling ─────────────────────────────────────────
 
+# Candidate benchmarks. Each is "higher is better" so correlations with Sharpe share a sign.
+METRICS = ["accuracy", "auc", "neg_logloss", "bull_acc", "bear_acc"]
+
+
+def _metrics(preds: np.ndarray, proba: np.ndarray, w: pd.DataFrame) -> dict:
+    """All candidate benchmark scores for one window. bull/bear = accuracy on days above/below the 50-day MA."""
+    y = w["target"].values
+    hit = preds == y
+    up = w["ma50"].values < 0  # price above its 50-day mean
+    two_class = len(np.unique(y)) == 2
+    return {
+        "accuracy": float(hit.mean()),
+        "auc": float(roc_auc_score(y, proba)) if two_class else np.nan,
+        "neg_logloss": float(-log_loss(y, proba, labels=[0, 1])),
+        "bull_acc": float(hit[up].mean()) if up.sum() >= 3 else np.nan,
+        "bear_acc": float(hit[~up].mean()) if (~up).sum() >= 3 else np.nan,
+    }
+
+
 def h1_validity(df: pd.DataFrame, scaler: StandardScaler, models: dict, freq: str = "M") -> pd.DataFrame:
-    """Per-period accuracy (benchmark) vs. Sharpe (business value), one row per (period, model)."""
+    """Per-period benchmark scores (METRICS) vs. Sharpe (business value), one row per (period, model)."""
     rows = []
     for name, model in models.items():
         preds = pd.Series(predict(model, scaler, df), index=df.index)
+        proba = pd.Series(predict_proba(model, scaler, df), index=df.index)
         for period, w in df.groupby(df.index.to_period(freq)):
             if len(w) < 10:
                 continue
-            acc, sharpe = _score(preds.loc[w.index].values, w)
-            rows.append({"period": str(period), "model": name, "accuracy": acc, "sharpe": sharpe})
+            _, sharpe = _score(preds.loc[w.index].values, w)
+            m = _metrics(preds.loc[w.index].values, proba.loc[w.index].values, w)
+            rows.append({"period": str(period), "model": name, **m, "sharpe": sharpe})
     return pd.DataFrame(rows)
 
 
-def h1_correlation(h1: pd.DataFrame) -> float:
-    """Pooled corr(accuracy, Sharpe) — how good a proxy is the benchmark overall?"""
-    return float(h1["accuracy"].corr(h1["sharpe"]))
+def h1_correlation(h1: pd.DataFrame, metric: str = "accuracy") -> float:
+    """Pooled corr(metric, Sharpe): how good a proxy is the benchmark overall?"""
+    return float(h1[metric].corr(h1["sharpe"]))
 
 
 def h1_rolling(h1: pd.DataFrame, window: int = 24) -> pd.DataFrame:
-    """Rolling corr(accuracy, Sharpe) per model — decay over time = proxy drifting from value."""
+    """Rolling corr(metric, Sharpe) per model and metric. Long format: period, model, metric, rolling_corr."""
     out = []
     for name, g in h1.groupby("model", sort=False):
         g = g.sort_values("period")
-        out.append(pd.DataFrame({
-            "period": g["period"].values,
-            "model": name,
-            "rolling_corr": g["accuracy"].rolling(window).corr(g["sharpe"]).values,
-        }))
+        for metric in METRICS:
+            out.append(pd.DataFrame({
+                "period": g["period"].values,
+                "model": name,
+                "metric": metric,
+                "rolling_corr": g[metric].rolling(window, min_periods=window // 2).corr(g["sharpe"]).values,
+            }))
     return pd.concat(out).dropna().reset_index(drop=True)
+
+
+def h1_summary(h1: pd.DataFrame, roll: pd.DataFrame) -> pd.DataFrame:
+    """One row per metric: pooled corr with Sharpe, and how much the rolling corr moves (min, std)."""
+    r = roll.groupby("metric")["rolling_corr"]
+    out = pd.DataFrame({
+        "pooled_corr": {m: h1_correlation(h1, m) for m in METRICS},
+        "rolling_min": r.min(),
+        "rolling_mean": r.mean(),
+        "rolling_std": r.std(),
+    }).loc[METRICS]
+    out.index.name = "metric"
+    return out.reset_index()
 
 
 # ── H2: Temporal Holdout ─────────────────────────────────────────────────────
