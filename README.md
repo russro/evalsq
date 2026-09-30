@@ -62,3 +62,4 @@ The pool size whose winner deployed best, month by month, and the 12-month rolli
 - `evalsq/deploy.py` runs the monthly walk-forward, the selection rules and the winner's curse (`winners_curse_monthly`, `optimal_k`).
 - `evalsq/plots.py` draws the figures above.
 - `evalsq/cli.py` is the entry point.
+- `slides/outline.md` is the first-pass slide outline. `slides/mockups.py` draws the diagram mockups (`slides/mock_*.png`) to redraw in draw.io.

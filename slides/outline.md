@@ -1,0 +1,18 @@
+# eval2 slide outline (first pass)
+
+Talk: October 10, 2026. Figures come from `uv run evalsq --grid 25` (`figures/`). Diagram mockups come from `uv run python slides/mockups.py` (`slides/mock_*.png`) and are meant to be redrawn in draw.io.
+
+1. **Title.** eval2: evaluating evals before they dictate deployment decisions. Russell Ro, October 10, 2026.
+2. **What is a benchmark?** A proxy for the thing that makes money. It is useful only while it stays predictive of that thing, and that can erode without any warning.
+3. **Pipeline.** Data → Models → Benchmark → Deploy → $. The $ arrives L days late, which is why we decide on the benchmark at all. Diagram: `mock_pipeline.png`.
+4. **Drift.** Data drift (inputs move), concept drift (the input to outcome mapping moves), label drift (how we label or score moves). The benchmark sits on top of all three. No figure, three small panels in draw.io.
+5. **Worked example.** SPY 2010 to 2025, 8-model zoo, trained through 2017. Each month: retrain and pick on data up to t−L (L = 21 trading days), deploy for the month, see the P&L a month later. Figures: `fig1_setup.png`, `mock_timeline.png`.
+6. **Benchmarking the benchmark.** Because of the lag we cannot just deploy the model that made money. So the question becomes which metric picks models that make money. Diagram: `mock_bench_of_bench.png`.
+7. **Three checks.** H1 validity (does the score track $?), H2 temporal holdout (does the ranking survive time?), H3 meta-model (is the score just the regime?). Diagram: `mock_heuristics_map.png`.
+8. **H1a. Does the score track $?** Accuracy correlates 0.82 with monthly Sharpe, AUC 0.35. AUC for LogReg falls to −0.55 in 2023. Figure: `fig2_h1_validity.png`.
+9. **H1b. What each metric earns.** $100k deployed by each rule: bear-day accuracy $335k, accuracy $222k, AUC $192k, log-loss $177k. Never switching made $351k and SPY made $287k. The metric with the best correlation does not make the most money. Figures: `fig5_deploy.png`, `fig6_picks.png`.
+10. **H2. Does the ranking survive time?** Train on every year before, test on one year. The better model flips 3 times, and a single 2018 split hides that RF wins in the 2022 bear. Figure: `fig3_h2_holdout.png`.
+11. **H3. Is the score just the regime?** Predict RF yearly accuracy from that year's volatility and trend. LOO R² = −0.38, so the score still says something about the model. Figure: `fig4_h3_meta.png`.
+12. **Bonus. The more you compare, the more the leaderboard lies.** Best of k GBM configs: the bench promises 6.2pt more than it delivers at k=25, 0.1pt at k=1. Month to month the gap swings −25 to +30pt, and the best k flips between 1 and 25 with no pattern. Deployed accuracy stays near 54% for every k. Figures: `fig7_winners_curse.png`, `fig8_gap_dist.png`, `fig9_opt_k.png`.
+13. **What each check catches.** H1 catches concept drift (the score to $ link moves). H2 catches data drift (regime change reorders models). H3 flags a benchmark that measures the environment more than the model. The winner's curse is selection bias, which shows up even with no drift.
+14. **Many more, depends on the task.** Coverage audits, label consistency, contamination. Discussion: what drift are you most exposed to, and would your benchmark notice?
