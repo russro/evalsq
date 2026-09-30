@@ -7,7 +7,7 @@ from .data import load
 from . import plots
 from .heuristics import h1_rolling, h1_summary, h1_validity, h2_rank_flips, h2_temporal, h3_meta
 from .models import accuracy, fit_models, make_grid, make_zoo, train_test_split_by_year
-from .deploy import RULES, apply_rules, deploy_summary, equity, walk_forward, winners_curse
+from .deploy import RULES, apply_rules, curse_by_k, deploy_summary, equity, optimal_k, walk_forward, winners_curse_monthly
 
 
 def _section(title: str) -> None:
@@ -73,10 +73,15 @@ def main(argv: list[str] | None = None) -> None:
     if args.grid:
         _section(f"Backup: winner's curse over {args.grid} GBM configs")
         grid_scores = walk_forward(df, make_grid(args.grid), args.cutoff, lag=args.lag, sel_window=args.sel_window, n_jobs=args.jobs)
-        wc = winners_curse(grid_scores)
+        wcm = winners_curse_monthly(grid_scores)
+        wc = curse_by_k(wcm)
+        opt = optimal_k(wcm)
         print(wc.round(4).to_string(index=False))
         grid_scores.to_csv(out / "grid_scores.csv", index=False)
         wc.to_csv(out / "winners_curse.csv", index=False)
+        wcm.to_csv(out / "winners_curse_monthly.csv", index=False)
+        opt.to_csv(out / "optimal_k.csv", index=False)
+        print(f"\n  Best k per month: {opt['opt_k'].value_counts().sort_index().to_dict()}")
 
     print(f"\nCSVs → {out.resolve()}/")
 
@@ -91,6 +96,8 @@ def main(argv: list[str] | None = None) -> None:
         plots.plot_picks(picks, RULES + ["oracle"], figs / "fig6_picks.png")
         if wc is not None:
             plots.plot_winners_curse(wc, figs / "fig7_winners_curse.png")
+            plots.plot_gap_dist(wcm, figs / "fig8_gap_dist.png")
+            plots.plot_opt_k(opt, figs / "fig9_opt_k.png")
         print(f"Figures → {figs.resolve()}/")
 
 

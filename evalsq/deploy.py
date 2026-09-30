@@ -128,21 +128,42 @@ def deploy_summary(picks: pd.DataFrame, start: float = START) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def winners_curse(scores: pd.DataFrame, ks: tuple = (1, 2, 5, 10, 25),
-                  n_draws: int = 200, seed: int = 0) -> pd.DataFrame:
-    """Draw k candidates, pick the best selection-window accuracy, compare with its accuracy once deployed.
+def winners_curse_monthly(scores: pd.DataFrame, ks: tuple = (1, 2, 5, 10, 25),
+                          n_draws: int = 200, seed: int = 0) -> pd.DataFrame:
+    """Month x k table: draw k candidates, pick the best selection-window accuracy, compare with its accuracy once deployed.
 
     The gap (bench minus deployed) is the winner's curse: with more near-tied candidates the
     winner is more often the luckiest one, so the bench promises more than it delivers.
     """
     rng = np.random.default_rng(seed)
     rows = []
-    for _, g in scores.groupby("month"):
+    for month, g in scores.groupby("month"):
         bench, real = g["accuracy"].values, g["month_acc"].values
         for k in [k for k in ks if k <= len(g)]:
             idx = np.array([rng.choice(len(g), k, replace=False) for _ in range(n_draws)])
             best = idx[np.arange(n_draws), bench[idx].argmax(axis=1)]
-            rows.append({"k": k, "bench_acc": bench[best].mean(), "deployed_acc": real[best].mean()})
-    out = pd.DataFrame(rows).groupby("k").mean().reset_index()
+            rows.append({"month": month, "k": k, "bench_acc": bench[best].mean(), "deployed_acc": real[best].mean()})
+    out = pd.DataFrame(rows)
     out["gap"] = out["bench_acc"] - out["deployed_acc"]
     return out
+
+
+def winners_curse(scores: pd.DataFrame, ks: tuple = (1, 2, 5, 10, 25),
+                  n_draws: int = 200, seed: int = 0) -> pd.DataFrame:
+    """Winner's curse averaged over months, one row per k."""
+    return curse_by_k(winners_curse_monthly(scores, ks, n_draws, seed))
+
+
+def curse_by_k(monthly: pd.DataFrame) -> pd.DataFrame:
+    """Average the month x k table over months."""
+    out = monthly.drop(columns="month").groupby("k").mean().reset_index()
+    out["gap"] = out["bench_acc"] - out["deployed_acc"]
+    return out
+
+
+def optimal_k(monthly: pd.DataFrame, window: int = 12) -> pd.DataFrame:
+    """Per month, the pool size k whose winner deployed best, plus the rolling std of log2(k) as its volatility."""
+    best = monthly.loc[monthly.groupby("month")["deployed_acc"].idxmax(), ["month", "k", "deployed_acc"]]
+    best = best.rename(columns={"k": "opt_k"}).sort_values("month").reset_index(drop=True)
+    best["opt_k_vol"] = np.log2(best["opt_k"]).rolling(window, min_periods=window).std()
+    return best

@@ -175,3 +175,37 @@ def plot_winners_curse(wc: pd.DataFrame, path: Path) -> Path:
     ax.set_ylabel("accuracy of the picked model")
     ax.legend(fontsize=8, frameon=False)
     return _save(fig, path)
+
+
+def plot_gap_dist(monthly: pd.DataFrame, path: Path) -> Path:
+    """Spread of the monthly winner's-curse gap at each pool size k, with the mean on top."""
+    ks = sorted(monthly["k"].unique())
+    fig, ax = plt.subplots(figsize=(5, 3.6))
+    ax.boxplot([monthly.loc[monthly["k"] == k, "gap"] * 100 for k in ks], positions=range(len(ks)),
+               widths=0.5, showfliers=False, medianprops={"color": "#0072B2"})
+    means = monthly.groupby("k")["gap"].mean() * 100
+    ax.plot(range(len(ks)), means.loc[ks], "o-", color="#D55E00", label="mean over months")
+    ax.axhline(0, color="#999999", lw=0.8)
+    ax.set_xticks(range(len(ks)), [str(k) for k in ks])
+    ax.set_xlabel("candidates compared (k)")
+    ax.set_ylabel("gap, bench minus deployed (pt)")
+    ax.legend(fontsize=8, frameon=False, loc="upper left")
+    return _save(fig, path)
+
+
+def plot_opt_k(opt: pd.DataFrame, path: Path) -> Path:
+    """Which pool size k would have deployed best each month, and how much that answer moves."""
+    fig, (a, b) = plt.subplots(2, 1, figsize=(8, 4.4), sharex=True, height_ratios=[2, 1])
+    x = _period_ts(opt["month"])
+    a.step(x, opt["opt_k"], where="mid", color="#0072B2", lw=1.2)
+    a.set_yscale("log", base=2)
+    ks = sorted(opt["opt_k"].unique())
+    a.set_yticks(ks, [str(k) for k in ks])
+    a.minorticks_off()
+    a.set_ylabel("best k that month")
+    b.plot(x, opt["opt_k_vol"], color="#D55E00")
+    b.set_ylabel("12-mo std of log2 k")
+    for ax in (a, b):
+        for a_, b_ in SHADE.values():
+            ax.axvspan(pd.Timestamp(a_), pd.Timestamp(b_), color="#D55E00", alpha=0.1, lw=0)
+    return _save(fig, path)

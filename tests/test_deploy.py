@@ -5,7 +5,8 @@ from sklearn.linear_model import LogisticRegression
 
 from evalsq.data import FEATURES
 from evalsq.deploy import (RULES, START, apply_rules, deploy_summary, equity, month_starts,
-                           visible_end, walk_forward, winners_curse)
+                           optimal_k, visible_end, walk_forward, winners_curse,
+                           winners_curse_monthly)
 from evalsq.models import make_grid, make_zoo
 
 SMALL_ZOO = {
@@ -119,3 +120,18 @@ def test_walk_forward_falls_back_to_serial(featured_df, monkeypatch):
     with pytest.warns(UserWarning, match="running serially"):
         s = dep.walk_forward(featured_df, SMALL_ZOO, 2021)
     pd.testing.assert_frame_equal(s, walk_forward(featured_df, SMALL_ZOO, 2021, n_jobs=1))
+
+
+def test_winners_curse_monthly_matches_mean():
+    s = _scores([f"2020-{m:02d}" for m in range(1, 13)], [f"m{i}" for i in range(20)], np.random.default_rng(4))
+    m = winners_curse_monthly(s, ks=(1, 5, 20), n_draws=20)
+    assert len(m) == 12 * 3 and set(m.columns) >= {"month", "k", "gap"}
+    wc = winners_curse(s, ks=(1, 5, 20), n_draws=20).set_index("k")
+    assert np.allclose(m.groupby("k")["gap"].mean(), wc["gap"])
+
+
+def test_optimal_k_picks_best_deployed():
+    m = pd.DataFrame({"month": ["a", "a", "b", "b"], "k": [1, 5, 1, 5], "deployed_acc": [0.5, 0.6, 0.7, 0.4]})
+    opt = optimal_k(m, window=2)
+    assert opt["opt_k"].tolist() == [5, 1]
+    assert np.isnan(opt["opt_k_vol"].iloc[0]) and opt["opt_k_vol"].iloc[1] > 0
