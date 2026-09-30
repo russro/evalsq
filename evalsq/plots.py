@@ -6,12 +6,13 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
+from matplotlib import font_manager  # noqa: E402
 import pandas as pd  # noqa: E402
 
 from .heuristics import METRICS  # noqa: E402
 
-MODEL_COLORS = {"LogReg": "#0072B2", "RF": "#E69F00"}
-METRIC_COLORS = dict(zip(METRICS, ["#0072B2", "#E69F00", "#009E73", "#CC79A7", "#56B4E9"]))
+MODEL_COLORS = {"LogReg": "#00838A", "RF": "#FF6C2F"}
+METRIC_COLORS = dict(zip(METRICS, ["#00838A", "#FF6C2F", "#3D9A3F", "#765BA7", "#3255A4"]))
 METRIC_LABELS = {
     "accuracy": "Accuracy",
     "auc": "AUC",
@@ -21,8 +22,24 @@ METRIC_LABELS = {
 }
 SHADE = {"2020 crash": ("2020-02-19", "2020-04-30"), "2022 bear": ("2022-01-03", "2022-10-12")}
 
+# Risograph-style inks on cream paper + Space Grotesk (OFL, bundled), to stand apart from default-looking figs.
+PAPER, INK = "#F6F1E7", "#1F1A17"
+for _f in (Path(__file__).parent / "fonts").glob("*.ttf"):
+    font_manager.fontManager.addfont(str(_f))
+
 plt.rcParams.update({
     "figure.dpi": 150,
+    "font.family": "Space Grotesk",
+    "figure.facecolor": PAPER,
+    "axes.facecolor": PAPER,
+    "savefig.facecolor": PAPER,
+    "axes.edgecolor": INK,
+    "axes.labelcolor": INK,
+    "axes.titleweight": "bold",
+    "text.color": INK,
+    "xtick.color": INK,
+    "ytick.color": INK,
+    "grid.color": "#CFC5B6",
     "axes.spines.top": False,
     "axes.spines.right": False,
     "axes.grid": True,
@@ -45,16 +62,16 @@ def _period_ts(periods: pd.Series) -> pd.DatetimeIndex:
 def plot_setup(df: pd.DataFrame, cutoff: int, path: Path) -> Path:
     """SPY close with the train/test split and the two stress periods shaded."""
     fig, ax = plt.subplots(figsize=(8, 3.2))
-    ax.plot(df.index, df["close"], color="#333333", lw=1)
+    ax.plot(df.index, df["close"], color="#2B2522", lw=1)
     split = pd.Timestamp(f"{cutoff}-01-01")
-    ax.axvline(split, color="#555555", ls="--", lw=1)
+    ax.axvline(split, color="#5E554F", ls="--", lw=1)
     ymax = df["close"].max()
-    ax.text(split, ymax, "  test", va="top", ha="left", color="#555555")
-    ax.text(split, ymax, "train  ", va="top", ha="right", color="#555555")
+    ax.text(split, ymax, "  test", va="top", ha="left", color="#5E554F")
+    ax.text(split, ymax, "train  ", va="top", ha="right", color="#5E554F")
     for (label, (a, b)), ha in zip(SHADE.items(), ["right", "left"]):
-        ax.axvspan(pd.Timestamp(a), pd.Timestamp(b), color="#D55E00", alpha=0.15, lw=0)
+        ax.axvspan(pd.Timestamp(a), pd.Timestamp(b), color="#FF48B0", alpha=0.15, lw=0)
         x = pd.Timestamp(a) if ha == "right" else pd.Timestamp(b)
-        ax.text(x, df["close"].min(), f" {label} ", fontsize=8, color="#D55E00", va="bottom", ha=ha)
+        ax.text(x, df["close"].min(), f" {label} ", fontsize=8, color="#FF48B0", va="bottom", ha=ha)
     ax.set_ylabel("SPY close (USD)")
     return _save(fig, path)
 
@@ -76,7 +93,7 @@ def plot_h1(summary: pd.DataFrame, roll: pd.DataFrame, path: Path) -> Path:
     for m in METRICS:
         b.plot(_period_ts(mean.index), mean[m], color=METRIC_COLORS[m], lw=1.5, label=METRIC_LABELS[m])
     for a_, b_ in SHADE.values():
-        b.axvspan(pd.Timestamp(a_), pd.Timestamp(b_), color="#D55E00", alpha=0.1, lw=0)
+        b.axvspan(pd.Timestamp(a_), pd.Timestamp(b_), color="#FF48B0", alpha=0.1, lw=0)
     b.set_ylabel("rolling corr with Sharpe")
     b.set_title("(b) 24-month rolling window", loc="left")
     b.legend(fontsize=8, frameon=False, loc="lower left")
@@ -93,8 +110,8 @@ def plot_h2(h2: pd.DataFrame, path: Path) -> Path:
         ax.bar([j + (i - (len(models) - 1) / 2) * width for j in x], h2[m], width, color=MODEL_COLORS[m], label=m)
     flips = h2["winner"] != h2["winner"].shift()
     for j in [j for j in x if j > 0 and flips.iloc[j]]:
-        ax.annotate("flip", (j, h2.loc[j, models].max() + 0.005), ha="center", fontsize=8, color="#D55E00")
-    ax.axhline(0.5, color="#555555", lw=0.8, ls=":")
+        ax.annotate("flip", (j, h2.loc[j, models].max() + 0.005), ha="center", fontsize=8, color="#FF48B0")
+    ax.axhline(0.5, color="#5E554F", lw=0.8, ls=":")
     ax.set_xticks(list(x), h2["test_year"].astype(str))
     ax.set_ylim(0.4, max(0.62, h2[models].max().max() + 0.03))
     ax.set_ylabel("accuracy")
@@ -105,12 +122,12 @@ def plot_h2(h2: pd.DataFrame, path: Path) -> Path:
 def plot_h3(meta: pd.DataFrame, r2: float, path: Path) -> Path:
     """Meta-model prediction of yearly accuracy (leave-one-out) against the observed accuracy."""
     fig, ax = plt.subplots(figsize=(4.2, 4))
-    ax.scatter(meta["acc"], meta["pred_acc"], color="#0072B2")
+    ax.scatter(meta["acc"], meta["pred_acc"], color="#00838A")
     for _, r in meta.iterrows():
         ax.annotate(str(int(r["year"])), (r["acc"], r["pred_acc"]), fontsize=7, xytext=(3, 3), textcoords="offset points")
     lo = min(meta["acc"].min(), meta["pred_acc"].min()) - 0.01
     hi = max(meta["acc"].max(), meta["pred_acc"].max()) + 0.01
-    ax.plot([lo, hi], [lo, hi], color="#555555", lw=0.8, ls="--")
+    ax.plot([lo, hi], [lo, hi], color="#5E554F", lw=0.8, ls="--")
     ax.set_xlim(lo, hi)
     ax.set_ylim(lo, hi)
     ax.set_xlabel("observed accuracy")
@@ -121,11 +138,11 @@ def plot_h3(meta: pd.DataFrame, r2: float, path: Path) -> Path:
 
 # ── Deployment (deploy.py) ───────────────────────────────────────────────────
 
-RULE_COLORS = {**METRIC_COLORS, "lagged_pnl": "#D55E00"}
+RULE_COLORS = {**METRIC_COLORS, "lagged_pnl": "#FF48B0"}
 RULE_LABELS = {**METRIC_LABELS, "lagged_pnl": "Lagged P&L", "oracle": "Oracle (hindsight)",
                "never_switch": "Never switch", "always_long": "Always long SPY"}
-REF_STYLE = {"oracle": ("#000000", ":"), "never_switch": ("#777777", "--"), "always_long": ("#333333", "-")}
-ZOO_COLORS = ["#0072B2", "#56B4E9", "#E69F00", "#F0E442", "#009E73", "#8FD694", "#CC79A7", "#D55E00"]
+REF_STYLE = {"oracle": ("#1F1A17", ":"), "never_switch": ("#8A8079", "--"), "always_long": ("#2B2522", "-")}
+ZOO_COLORS = ["#00838A", "#3255A4", "#FF6C2F", "#FFB511", "#3D9A3F", "#9FD4C8", "#765BA7", "#FF48B0"]
 
 
 def plot_deploy(eq: pd.DataFrame, rules: list[str], path: Path) -> Path:
@@ -133,11 +150,11 @@ def plot_deploy(eq: pd.DataFrame, rules: list[str], path: Path) -> Path:
     fig, ax = plt.subplots(figsize=(8, 4))
     x = _period_ts(eq.index)
     for r in eq.columns:
-        color, ls = REF_STYLE.get(r, (RULE_COLORS.get(r, "#999999"), "-"))
+        color, ls = REF_STYLE.get(r, (RULE_COLORS.get(r, "#A89E96"), "-"))
         lw = 1.8 if r in rules else 1.2
         ax.plot(x, eq[r], color=color, ls=ls, lw=lw, label=f"{RULE_LABELS.get(r, r)}  ${eq[r].iloc[-1] / 1e3:,.0f}k")
     for a_, b_ in SHADE.values():
-        ax.axvspan(pd.Timestamp(a_), pd.Timestamp(b_), color="#D55E00", alpha=0.1, lw=0)
+        ax.axvspan(pd.Timestamp(a_), pd.Timestamp(b_), color="#FF48B0", alpha=0.1, lw=0)
     ax.set_yscale("log")
     ax.set_ylabel("portfolio value (USD, log)")
     ax.legend(fontsize=8, frameon=False, loc="upper left", title="pick the model with the best...", title_fontsize=8)
@@ -167,9 +184,9 @@ def plot_picks(picks: pd.DataFrame, rules: list[str], path: Path) -> Path:
 def plot_winners_curse(wc: pd.DataFrame, path: Path) -> Path:
     """Accuracy the bench promised for the winner vs. what it delivered, as the candidate pool grows."""
     fig, ax = plt.subplots(figsize=(5, 3.6))
-    ax.plot(wc["k"], wc["bench_acc"], "o-", color="#0072B2", label="bench (selection window)")
-    ax.plot(wc["k"], wc["deployed_acc"], "o-", color="#D55E00", label="deployed (next month)")
-    ax.fill_between(wc["k"], wc["deployed_acc"], wc["bench_acc"], color="#999999", alpha=0.2, lw=0)
+    ax.plot(wc["k"], wc["bench_acc"], "o-", color="#00838A", label="bench (selection window)")
+    ax.plot(wc["k"], wc["deployed_acc"], "o-", color="#FF48B0", label="deployed (next month)")
+    ax.fill_between(wc["k"], wc["deployed_acc"], wc["bench_acc"], color="#A89E96", alpha=0.2, lw=0)
     ax.set_xscale("log")
     ax.set_xlabel("candidates compared (k)")
     ax.set_ylabel("accuracy of the picked model")
@@ -182,10 +199,10 @@ def plot_gap_dist(monthly: pd.DataFrame, path: Path) -> Path:
     ks = sorted(monthly["k"].unique())
     fig, ax = plt.subplots(figsize=(5, 3.6))
     ax.boxplot([monthly.loc[monthly["k"] == k, "gap"] * 100 for k in ks], positions=range(len(ks)),
-               widths=0.5, showfliers=False, medianprops={"color": "#0072B2"})
+               widths=0.5, showfliers=False, medianprops={"color": "#00838A"})
     means = monthly.groupby("k")["gap"].mean() * 100
-    ax.plot(range(len(ks)), means.loc[ks], "o-", color="#D55E00", label="mean over months")
-    ax.axhline(0, color="#999999", lw=0.8)
+    ax.plot(range(len(ks)), means.loc[ks], "o-", color="#FF48B0", label="mean over months")
+    ax.axhline(0, color="#A89E96", lw=0.8)
     ax.set_xticks(range(len(ks)), [str(k) for k in ks])
     ax.set_xlabel("candidates compared (k)")
     ax.set_ylabel("gap, bench minus deployed (pt)")
@@ -197,15 +214,15 @@ def plot_opt_k(opt: pd.DataFrame, path: Path) -> Path:
     """Which pool size k would have deployed best each month, and how much that answer moves."""
     fig, (a, b) = plt.subplots(2, 1, figsize=(8, 4.4), sharex=True, height_ratios=[2, 1])
     x = _period_ts(opt["month"])
-    a.step(x, opt["opt_k"], where="mid", color="#0072B2", lw=1.2)
+    a.step(x, opt["opt_k"], where="mid", color="#00838A", lw=1.2)
     a.set_yscale("log", base=2)
     ks = sorted(opt["opt_k"].unique())
     a.set_yticks(ks, [str(k) for k in ks])
     a.minorticks_off()
     a.set_ylabel("best k that month")
-    b.plot(x, opt["opt_k_vol"], color="#D55E00")
+    b.plot(x, opt["opt_k_vol"], color="#FF48B0")
     b.set_ylabel("12-mo std of log2 k")
     for ax in (a, b):
         for a_, b_ in SHADE.values():
-            ax.axvspan(pd.Timestamp(a_), pd.Timestamp(b_), color="#D55E00", alpha=0.1, lw=0)
+            ax.axvspan(pd.Timestamp(a_), pd.Timestamp(b_), color="#FF48B0", alpha=0.1, lw=0)
     return _save(fig, path)
