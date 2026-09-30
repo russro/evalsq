@@ -40,6 +40,8 @@ def build_features(raw: pd.DataFrame) -> pd.DataFrame:
     df["ma10"] = c.rolling(10).mean() / c - 1
     df["ma50"] = c.rolling(50).mean() / c - 1
     df["vol20"] = df["ret1"].rolling(20).std()
+    df["dow"] = df.index.dayofweek
+    df["month"] = df.index.month
     df["next_ret"] = df["ret1"].shift(-1)
     df["target"] = (df["next_ret"] > 0).astype(int)
     return df.dropna()
