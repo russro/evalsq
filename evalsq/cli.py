@@ -6,7 +6,8 @@ from pathlib import Path
 from .data import load
 from . import plots
 from .heuristics import h1_rolling, h1_summary, h1_validity, h2_rank_flips, h2_temporal, h3_meta
-from .models import accuracy, fit_models, train_test_split_by_year
+from .models import accuracy, fit_models, make_grid, make_zoo, train_test_split_by_year
+from .deploy import RULES, apply_rules, deploy_summary, equity, walk_forward, winners_curse
 
 
 def _section(title: str) -> None:
@@ -19,6 +20,9 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--out", default="results", help="output dir for CSVs (default: results/)")
     p.add_argument("--cutoff", type=int, default=2018, help="train/test year cutoff (default: 2018)")
     p.add_argument("--figs", default="figures", help="output dir for PNGs (default: figures/)")
+    p.add_argument("--lag", type=int, default=21, help="trading days before a label is visible (default: 21)")
+    p.add_argument("--sel-window", type=int, default=63, help="selection window in trading days (default: 63)")
+    p.add_argument("--grid", type=int, default=0, help="also run an N-config GBM grid for the winner's-curse backup (slow)")
     p.add_argument("--no-plots", action="store_true", help="skip figures")
     args = p.parse_args(argv)
 
@@ -55,6 +59,24 @@ def main(argv: list[str] | None = None) -> None:
     print(f"\n  Meta-model LOO R² = {r2:.3f}  (high → score tracks regime, not model)")
     meta.to_csv(out / "h3_meta.csv", index=False)
 
+    _section(f"H1b: Monthly deployment, lag {args.lag} days (money per selection rule)")
+    scores = walk_forward(df, make_zoo(), args.cutoff, lag=args.lag, sel_window=args.sel_window)
+    picks = apply_rules(scores)
+    dep = deploy_summary(picks)
+    print(dep.round(3).to_string(index=False))
+    scores.to_csv(out / "deploy_scores.csv", index=False)
+    picks.to_csv(out / "deploy_picks.csv", index=False)
+    dep.to_csv(out / "deploy_summary.csv", index=False)
+
+    wc = None
+    if args.grid:
+        _section(f"Backup: winner's curse over {args.grid} GBM configs")
+        grid_scores = walk_forward(df, make_grid(args.grid), args.cutoff, lag=args.lag, sel_window=args.sel_window)
+        wc = winners_curse(grid_scores)
+        print(wc.round(4).to_string(index=False))
+        grid_scores.to_csv(out / "grid_scores.csv", index=False)
+        wc.to_csv(out / "winners_curse.csv", index=False)
+
     print(f"\nCSVs → {out.resolve()}/")
 
     if not args.no_plots:
@@ -64,6 +86,10 @@ def main(argv: list[str] | None = None) -> None:
         plots.plot_h1(summary, roll, figs / "fig2_h1_validity.png")
         plots.plot_h2(h2, figs / "fig3_h2_holdout.png")
         plots.plot_h3(meta, r2, figs / "fig4_h3_meta.png")
+        plots.plot_deploy(equity(picks), RULES, figs / "fig5_deploy.png")
+        plots.plot_picks(picks, RULES + ["oracle"], figs / "fig6_picks.png")
+        if wc is not None:
+            plots.plot_winners_curse(wc, figs / "fig7_winners_curse.png")
         print(f"Figures → {figs.resolve()}/")
 
 

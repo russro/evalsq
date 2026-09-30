@@ -117,3 +117,61 @@ def plot_h3(meta: pd.DataFrame, r2: float, path: Path) -> Path:
     ax.set_ylabel("predicted accuracy")
     ax.set_title(f"leave-one-out R² = {r2:.2f}", loc="left")
     return _save(fig, path)
+
+
+# ── Deployment (deploy.py) ───────────────────────────────────────────────────
+
+RULE_COLORS = {**METRIC_COLORS, "lagged_pnl": "#D55E00"}
+RULE_LABELS = {**METRIC_LABELS, "lagged_pnl": "Lagged P&L", "oracle": "Oracle (hindsight)",
+               "never_switch": "Never switch", "always_long": "Always long SPY"}
+REF_STYLE = {"oracle": ("#000000", ":"), "never_switch": ("#777777", "--"), "always_long": ("#333333", "-")}
+ZOO_COLORS = ["#0072B2", "#56B4E9", "#E69F00", "#F0E442", "#009E73", "#8FD694", "#CC79A7", "#D55E00"]
+
+
+def plot_deploy(eq: pd.DataFrame, rules: list[str], path: Path) -> Path:
+    """Portfolio value under each selection rule, with reference lines. Log scale so the oracle fits."""
+    fig, ax = plt.subplots(figsize=(8, 4))
+    x = _period_ts(eq.index)
+    for r in eq.columns:
+        color, ls = REF_STYLE.get(r, (RULE_COLORS.get(r, "#999999"), "-"))
+        lw = 1.8 if r in rules else 1.2
+        ax.plot(x, eq[r], color=color, ls=ls, lw=lw, label=f"{RULE_LABELS.get(r, r)}  ${eq[r].iloc[-1] / 1e3:,.0f}k")
+    for a_, b_ in SHADE.values():
+        ax.axvspan(pd.Timestamp(a_), pd.Timestamp(b_), color="#D55E00", alpha=0.1, lw=0)
+    ax.set_yscale("log")
+    ax.set_ylabel("portfolio value (USD, log)")
+    ax.legend(fontsize=8, frameon=False, loc="upper left", title="pick the model with the best...", title_fontsize=8)
+    return _save(fig, path)
+
+
+def plot_picks(picks: pd.DataFrame, rules: list[str], path: Path) -> Path:
+    """Which model each rule deployed, month by month."""
+    from matplotlib.colors import ListedColormap
+    from matplotlib.patches import Patch
+
+    models = [m for m in dict.fromkeys(picks["model"]) if m != "SPY"]
+    code = {m: i for i, m in enumerate(models)}
+    wide = picks[picks["rule"].isin(rules)].pivot(index="rule", columns="month", values="model").loc[rules]
+    cmap = ListedColormap((ZOO_COLORS * 2)[:len(models)])
+    fig, ax = plt.subplots(figsize=(10, 0.45 * len(rules) + 1.6))
+    ax.imshow(wide.map(code.get).values, aspect="auto", cmap=cmap, vmin=-0.5, vmax=len(models) - 0.5, interpolation="nearest")
+    ax.set_yticks(range(len(rules)), [RULE_LABELS.get(r, r) for r in rules])
+    years = [i for i, m in enumerate(wide.columns) if m.endswith("-01")]
+    ax.set_xticks(years, [wide.columns[i][:4] for i in years])
+    ax.grid(False)
+    ax.legend(handles=[Patch(color=cmap(code[m]), label=m) for m in models], fontsize=8, frameon=False,
+              ncol=min(len(models), 4), loc="upper center", bbox_to_anchor=(0.5, -0.12))
+    return _save(fig, path)
+
+
+def plot_winners_curse(wc: pd.DataFrame, path: Path) -> Path:
+    """Accuracy the bench promised for the winner vs. what it delivered, as the candidate pool grows."""
+    fig, ax = plt.subplots(figsize=(5, 3.6))
+    ax.plot(wc["k"], wc["bench_acc"], "o-", color="#0072B2", label="bench (selection window)")
+    ax.plot(wc["k"], wc["deployed_acc"], "o-", color="#D55E00", label="deployed (next month)")
+    ax.fill_between(wc["k"], wc["deployed_acc"], wc["bench_acc"], color="#999999", alpha=0.2, lw=0)
+    ax.set_xscale("log")
+    ax.set_xlabel("candidates compared (k)")
+    ax.set_ylabel("accuracy of the picked model")
+    ax.legend(fontsize=8, frameon=False)
+    return _save(fig, path)
