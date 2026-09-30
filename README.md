@@ -44,10 +44,21 @@ Accuracy of each model when trained on every year before the test year and score
 
 A linear model that predicts the random forest's yearly accuracy from the mean volatility and trend of that year, scored with leave-one-out. A high R² would mean that the benchmark mostly measures the market regime instead of the model. Here the R² is -0.38, so these two features do not predict the score, and the yearly accuracy still carries information about the model.
 
+### Backup: winner's curse spread and best pool size
+
+![gap](figures/fig8_gap_dist.png)
+
+Monthly gap between the winner's bench accuracy and its deployed accuracy, per pool size k. The mean climbs from 0.1pt (k=1) to 6.2pt (k=25), but single months range from about -25pt to +30pt at every k.
+
+![optk](figures/fig9_opt_k.png)
+
+The pool size whose winner deployed best, month by month, and the 12-month rolling std of log2 k. The best k is 1 in 32 months and 25 in 39, and it flips between the two with no link to the crash or the bear market. Deployed accuracy barely moves with k (54.0% to 54.4%), so a bigger search only inflates the bench number.
+
 ## Code
 
 - `evalsq/data.py` downloads SPY and builds the features (returns, moving average ratios, volatility) and the next-day target.
 - `evalsq/models.py` defines the two models. New models go in `make_models()`.
 - `evalsq/heuristics.py` implements H1, H2 and H3.
+- `evalsq/deploy.py` runs the monthly walk-forward, the selection rules and the winner's curse (`winners_curse_monthly`, `optimal_k`).
 - `evalsq/plots.py` draws the figures above.
 - `evalsq/cli.py` is the entry point.
