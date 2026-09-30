@@ -6,8 +6,11 @@ held-out window, deploy the argmax for the month, and book its long/short P&L. L
 run on data that is L days stale.
 """
 
+import warnings
+
 import numpy as np
 import pandas as pd
+from joblib import Parallel, delayed
 from sklearn.base import clone
 
 from .heuristics import _metrics
@@ -35,34 +38,49 @@ def visible_end(pos0: int, lag: int) -> int:
     return pos0 - lag
 
 
-def walk_forward(df: pd.DataFrame, zoo: dict, start_year: int, lag: int = 21,
-                 sel_window: int = 63, min_train: int = 500) -> pd.DataFrame:
-    """One row per (month, model): selection-window scores and the realised result of deploying it that month."""
-    starts = month_starts(df, start_year)
+def _score_month(df: pd.DataFrame, zoo: dict, pos0: int, pos1: int, lag: int,
+                 sel_window: int, min_train: int) -> list[dict]:
+    """Retrain every model on data visible at pos0, score on the selection window, book the live month."""
+    end = visible_end(pos0, lag)
+    train, sel, live = df.iloc[:end - sel_window], df.iloc[end - sel_window:end], df.iloc[pos0:pos1]
+    if len(train) < min_train:
+        return []
+    month = str(df.index[pos0].to_period("M"))
+    spy = float(np.prod(1 + live["next_ret"].values) - 1)
     rows = []
-    for k, pos0 in enumerate(starts):
-        pos1 = starts[k + 1] if k + 1 < len(starts) else len(df)
-        end = visible_end(pos0, lag)
-        train, sel, live = df.iloc[:end - sel_window], df.iloc[end - sel_window:end], df.iloc[pos0:pos1]
-        if len(train) < min_train:
-            continue
-        month = str(df.index[pos0].to_period("M"))
-        spy = float(np.prod(1 + live["next_ret"].values) - 1)
-        for name, (feats, model) in zoo.items():
-            m = clone(model).fit(train[feats], train["target"])
-            s_pred, s_proba = m.predict(sel[feats]), m.predict_proba(sel[feats])[:, 1]
-            l_pred = m.predict(live[feats])
-            strat_sel = np.where(s_pred == 1, 1, -1) * sel["next_ret"].values
-            strat_live = np.where(l_pred == 1, 1, -1) * live["next_ret"].values
-            rows.append({
-                "month": month, "model": name,
-                **_metrics(s_pred, s_proba, sel),
-                "lagged_pnl": float(strat_sel.sum()),
-                "month_acc": float((l_pred == live["target"].values).mean()),
-                "month_ret": float(np.prod(1 + strat_live) - 1),
-                "spy_ret": spy,
-            })
-    return pd.DataFrame(rows)
+    for name, (feats, model) in zoo.items():
+        m = clone(model).fit(train[feats], train["target"])
+        s_pred, s_proba = m.predict(sel[feats]), m.predict_proba(sel[feats])[:, 1]
+        l_pred = m.predict(live[feats])
+        strat_sel = np.where(s_pred == 1, 1, -1) * sel["next_ret"].values
+        strat_live = np.where(l_pred == 1, 1, -1) * live["next_ret"].values
+        rows.append({
+            "month": month, "model": name,
+            **_metrics(s_pred, s_proba, sel),
+            "lagged_pnl": float(strat_sel.sum()),
+            "month_acc": float((l_pred == live["target"].values).mean()),
+            "month_ret": float(np.prod(1 + strat_live) - 1),
+            "spy_ret": spy,
+        })
+    return rows
+
+
+def walk_forward(df: pd.DataFrame, zoo: dict, start_year: int, lag: int = 21,
+                 sel_window: int = 63, min_train: int = 500, n_jobs: int = -1) -> pd.DataFrame:
+    """One row per (month, model): selection-window scores and the realised result of deploying it that month.
+
+    Months are independent, so they run in parallel (joblib). If the pool fails for any
+    reason (odd hardware, sandboxed /dev/shm), fall back to a plain serial loop.
+    """
+    starts = month_starts(df, start_year)
+    bounds = [(p, starts[k + 1] if k + 1 < len(starts) else len(df)) for k, p in enumerate(starts)]
+    args = (lag, sel_window, min_train)
+    try:
+        per_month = Parallel(n_jobs=n_jobs)(delayed(_score_month)(df, zoo, a, b, *args) for a, b in bounds)
+    except Exception as e:  # noqa: BLE001
+        warnings.warn(f"parallel walk-forward failed ({e!r}); running serially")
+        per_month = [_score_month(df, zoo, a, b, *args) for a, b in bounds]
+    return pd.DataFrame([r for rows in per_month for r in rows])
 
 
 def apply_rules(scores: pd.DataFrame) -> pd.DataFrame:
@@ -110,7 +128,7 @@ def deploy_summary(picks: pd.DataFrame, start: float = START) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def winners_curse(scores: pd.DataFrame, ks: tuple = (1, 2, 5, 10, 25, 50, 100),
+def winners_curse(scores: pd.DataFrame, ks: tuple = (1, 2, 5, 10, 25),
                   n_draws: int = 200, seed: int = 0) -> pd.DataFrame:
     """Draw k candidates, pick the best selection-window accuracy, compare with its accuracy once deployed.
 

@@ -101,3 +101,21 @@ def test_winners_curse_grows_with_k():
     wc = winners_curse(s, ks=(1, 5, 50), n_draws=50).set_index("k")
     assert abs(wc.loc[1, "gap"]) < 0.1
     assert wc.loc[50, "gap"] > wc.loc[5, "gap"] > wc.loc[1, "gap"]
+
+
+def test_walk_forward_parallel_matches_serial(featured_df):
+    par = walk_forward(featured_df, SMALL_ZOO, 2021, n_jobs=2)
+    ser = walk_forward(featured_df, SMALL_ZOO, 2021, n_jobs=1)
+    pd.testing.assert_frame_equal(par, ser)
+
+
+def test_walk_forward_falls_back_to_serial(featured_df, monkeypatch):
+    import evalsq.deploy as dep
+
+    def broken(*a, **k):
+        raise OSError("no shared memory")
+
+    monkeypatch.setattr(dep, "Parallel", broken)
+    with pytest.warns(UserWarning, match="running serially"):
+        s = dep.walk_forward(featured_df, SMALL_ZOO, 2021)
+    pd.testing.assert_frame_equal(s, walk_forward(featured_df, SMALL_ZOO, 2021, n_jobs=1))

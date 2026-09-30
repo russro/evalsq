@@ -22,7 +22,8 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--figs", default="figures", help="output dir for PNGs (default: figures/)")
     p.add_argument("--lag", type=int, default=21, help="trading days before a label is visible (default: 21)")
     p.add_argument("--sel-window", type=int, default=63, help="selection window in trading days (default: 63)")
-    p.add_argument("--grid", type=int, default=0, help="also run an N-config GBM grid for the winner's-curse backup (slow)")
+    p.add_argument("--grid", type=int, default=0, help="also run an N-config GBM grid for the winner's-curse backup (off by default; 25 is plenty, ~1 min)")
+    p.add_argument("--jobs", type=int, default=-1, help="parallel workers for the walk-forward (default: all cores, 1 = serial)")
     p.add_argument("--no-plots", action="store_true", help="skip figures")
     args = p.parse_args(argv)
 
@@ -60,7 +61,7 @@ def main(argv: list[str] | None = None) -> None:
     meta.to_csv(out / "h3_meta.csv", index=False)
 
     _section(f"H1b: Monthly deployment, lag {args.lag} days (money per selection rule)")
-    scores = walk_forward(df, make_zoo(), args.cutoff, lag=args.lag, sel_window=args.sel_window)
+    scores = walk_forward(df, make_zoo(), args.cutoff, lag=args.lag, sel_window=args.sel_window, n_jobs=args.jobs)
     picks = apply_rules(scores)
     dep = deploy_summary(picks)
     print(dep.round(3).to_string(index=False))
@@ -71,7 +72,7 @@ def main(argv: list[str] | None = None) -> None:
     wc = None
     if args.grid:
         _section(f"Backup: winner's curse over {args.grid} GBM configs")
-        grid_scores = walk_forward(df, make_grid(args.grid), args.cutoff, lag=args.lag, sel_window=args.sel_window)
+        grid_scores = walk_forward(df, make_grid(args.grid), args.cutoff, lag=args.lag, sel_window=args.sel_window, n_jobs=args.jobs)
         wc = winners_curse(grid_scores)
         print(wc.round(4).to_string(index=False))
         grid_scores.to_csv(out / "grid_scores.csv", index=False)

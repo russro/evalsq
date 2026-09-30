@@ -72,7 +72,7 @@ def make_zoo() -> dict:
     }
 
 
-def make_grid(n: int = 100, seed: int = 0) -> dict:
+def make_grid(n: int = 25, seed: int = 0) -> dict:
     """n random GBM configs (depth, learning rate, iterations, leaf size, feature set). Backup winner's-curse demo."""
     import numpy as np
     from sklearn.ensemble import HistGradientBoostingClassifier
