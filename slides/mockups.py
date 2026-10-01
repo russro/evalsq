@@ -100,8 +100,8 @@ def heuristics_map():
     """Slide 7: the three checks, ordered familiar -> unusual, each tied to what it asks."""
     fig, ax = canvas(10, 2.6)
     items = [("H1  Validity", "does the score track $?", BLUE),
-             ("H2  Selector stability", "does the best eval stay the best?", BLUE),
-             ("H3  Meta-model", "is the score just the regime?", BLUE)]
+             ("H2  Temporal holdout", "does the best eval stay the best?", BLUE),
+             ("H3  Complementarity", "what do the evals say about each other?", BLUE)]
     for i, (h, q, c) in enumerate(items):
         x = 1.7 + i * 3.3
         box(ax, x, 1.6, h, w=2.9, h=0.7, color=c, fs=11)
