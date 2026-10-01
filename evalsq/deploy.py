@@ -95,18 +95,21 @@ def walk_forward(df: pd.DataFrame, zoo: dict, start_year: int, lag: int = 21,
     return pd.DataFrame([r for rows in per_month for r in rows])
 
 
+def _pick(scores: pd.DataFrame, col: str, order: list[str]) -> pd.DataFrame:
+    """Per month, the model with the highest `col`. Ties go to the first model in `order`."""
+    wide = scores.pivot(index="month", columns="model", values=col)[order]
+    # a metric can be undefined for a month (e.g. no downtrend days); keep last month's pick
+    ok = wide.notna().any(axis=1)
+    pick = wide[ok].idxmax(axis=1).reindex(wide.index).ffill().fillna(order[0])
+    return pd.DataFrame({"month": wide.index, "model": pick.values})
+
+
 def apply_rules(scores: pd.DataFrame) -> pd.DataFrame:
     """Month x rule table of the picked model and its month return. Ties go to the first model in zoo order."""
     order = list(dict.fromkeys(scores["model"]))
-    scores = scores.assign(combined=combined(scores, COMBINED_OF, by="month"))
-    out = []
-    for rule in RULES + ["oracle"]:
-        col = "month_ret" if rule == "oracle" else rule
-        wide = scores.pivot(index="month", columns="model", values=col)[order]
-        # a metric can be undefined for a month (e.g. no downtrend days); keep last month's pick
-        ok = wide.notna().any(axis=1)
-        pick = wide[ok].idxmax(axis=1).reindex(wide.index).ffill().fillna(order[0])
-        out.append(pd.DataFrame({"month": wide.index, "rule": rule, "model": pick.values}))
+    scores = scores.assign(combined=combined(scores, COMBINED_OF, by="month").round(9))  # exact ties, see combo_usd
+    out = [_pick(scores, "month_ret" if rule == "oracle" else rule, order).assign(rule=rule)[["month", "rule", "model"]]
+           for rule in RULES + ["oracle"]]
     first = out[0]["model"].iloc[0]  # never switch: keep the model accuracy picked in month one
     months = out[0]["month"]
     out.append(pd.DataFrame({"month": months, "rule": "never_switch", "model": first}))
@@ -253,3 +256,55 @@ def h2_selectors(picks: pd.DataFrame, blocks: tuple = (1, 2)) -> tuple[dict, pd.
     folds = {b: fold_returns(picks, b) for b in blocks}
     summary = pd.DataFrame([{"block_years": b, **selector_stability(f)} for b, f in folds.items()])
     return folds, summary
+
+
+# ── H3: Complementarity (what do the evals say about each other?) ───────────
+
+def h3_redundancy(scores: pd.DataFrame, picks: pd.DataFrame, rules: list[str] = COMBINED_OF) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """How much the selectors repeat each other.
+
+    corr: within-month Spearman between rules' scores over the zoo, averaged over months, plus a
+    "month_ret" row/column (the $ each model then earned). NaN scores (no downtrend days) drop pairwise.
+    agree: share of months two rules deploy the same model.
+    """
+    cols = rules + ["month_ret"]
+    per_month = pd.concat(g[cols].corr(method="spearman") for _, g in scores.groupby("month"))
+    corr = per_month.groupby(level=0).mean().loc[cols, cols]  # mean skips undefined months
+    wide = picks.pivot(index="month", columns="rule", values="model")
+    agree = pd.DataFrame([[float((wide[a] == wide[b]).mean()) for b in rules] for a in rules], index=rules, columns=rules)
+    return corr, agree
+
+
+def combo_usd(scores: pd.DataFrame, cols: list[str], cost_bp: float = COST_BP, borrow: float = BORROW,
+              start: float = START) -> float:
+    """Final net $ of deploying the model with the best mean rank over `cols` (the `combined` rule on a subset)."""
+    order = list(dict.fromkeys(scores["model"]))
+    # round so mean-rank ties are exact whatever the column order, and go to zoo order
+    p = _pick(scores.assign(_c=combined(scores, list(cols), by="month").round(9)), "_c", order).assign(rule="combo")
+    rets = scores.set_index(["month", "model"])["month_ret"]
+    p["month_ret"] = rets.loc[list(zip(p["month"], p["model"]))].values
+    return float(start * (1 + apply_costs(p, scores, cost_bp, borrow)["month_ret"]).prod())
+
+
+def h3_complementarity(scores: pd.DataFrame, rules: list[str] = COMBINED_OF, **kw) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Does adding an eval add $?
+
+    forward: greedy forward selection, each step adds the rule whose mean-rank combo earns the most.
+    pair_gain: row A, column B = $ of the A+B combo minus $ of A alone (diagonal 0).
+    """
+    usd = {}
+
+    def f(cols):
+        key = tuple(sorted(cols))
+        if key not in usd:
+            usd[key] = combo_usd(scores, list(key), **kw)
+        return usd[key]
+
+    sel, rest, steps = [], list(rules), []
+    while rest:
+        best = max(rest, key=lambda c: f(sel + [c]))
+        sel.append(best)
+        rest.remove(best)
+        steps.append({"n": len(sel), "added": best, "final_usd": f(sel)})
+    pair = pd.DataFrame([[f([a, b]) - f([a]) if a != b else 0.0 for b in rules] for a in rules], index=rules, columns=rules)
+    return pd.DataFrame(steps), pair

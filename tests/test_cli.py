@@ -25,7 +25,8 @@ def test_cli_end_to_end(tmp_path, featured_df):
     pngs = sorted(p.name for p in figs.glob("*.png"))
     assert pngs == sorted(["fig1_setup.png", "fig2_h1_validity.png", "fig3_h2_folds.png", "fig3b_h2_regret.png", "fig4_h3_meta.png",
                     "fig5_deploy.png", "fig5b_deploy_bogle.png", "fig6_picks.png", "fig7_winners_curse.png",
-                    "fig8_gap_dist.png", "fig9_opt_k.png", "fig10_learned_weights.png"])
+                    "fig8_gap_dist.png", "fig9_opt_k.png", "fig10_learned_weights.png",
+                    "fig11_h3_redundancy.png", "fig11b_h3_complement.png"])
     assert all((figs / p).stat().st_size > 5000 for p in pngs)
 
 

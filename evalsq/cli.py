@@ -10,7 +10,7 @@ from . import plots
 from .heuristics import h1_rolling, h1_summary, h1_validity, h3_meta, h3_meta_monthly, yearly_holdout
 from .models import accuracy, fit_models, make_grid, make_zoo, train_test_split_by_year
 from .learned import learned_summary
-from .deploy import BORROW, COST_BP, REFERENCES, RULES, START, apply_costs, apply_rules, curse_by_k, deploy_summary, equity, h2_selectors, optimal_k, walk_forward, winners_curse_monthly
+from .deploy import BORROW, COST_BP, REFERENCES, RULES, START, apply_costs, apply_rules, curse_by_k, deploy_summary, equity, h2_selectors, h3_complementarity, h3_redundancy, optimal_k, walk_forward, winners_curse_monthly
 
 
 def _section(title: str) -> None:
@@ -100,6 +100,18 @@ def main(argv: list[str] | None = None) -> None:
     print(h2.round(3).to_string(index=False))
     h2.to_csv(out / "h2_selectors.csv", index=False)
 
+    _section("H3: Complementarity (what do the evals say about each other?)")
+    h3_corr, h3_agree = h3_redundancy(scores, picks)
+    h3_fwd, h3_pair = h3_complementarity(scores, cost_bp=args.cost_bp, borrow=args.borrow)
+    print("  within-month rank corr:")
+    print(h3_corr.round(2).to_string())
+    print("  forward selection (mean-rank combo, net $):")
+    print(h3_fwd.round(0).to_string(index=False))
+    h3_corr.to_csv(out / "h3_redundancy_corr.csv")
+    h3_agree.to_csv(out / "h3_redundancy_agree.csv")
+    h3_fwd.to_csv(out / "h3_forward.csv", index=False)
+    h3_pair.to_csv(out / "h3_pair_gain.csv")
+
     _section(f"Learned benchmark: ridge on bench signals, trained on {scores_all['month'].iloc[0]} on")
     lsum, lw, lpicks = learned_summary(scores_all, cut, cost_bp=args.cost_bp, borrow=args.borrow)
     print(lsum.round(3).to_string(index=False))
@@ -138,6 +150,8 @@ def main(argv: list[str] | None = None) -> None:
             plots.plot_deploy(eq, RULES, figs / "fig5b_deploy_bogle.png")
         plots.plot_h2_folds(h2_folds, figs / "fig3_h2_folds.png")
         plots.plot_h2_regret(h2, RULES, figs / "fig3b_h2_regret.png")
+        plots.plot_h3_redundancy(h3_corr, h3_agree, figs / "fig11_h3_redundancy.png")
+        plots.plot_h3_complementarity(h3_fwd, h3_pair, figs / "fig11b_h3_complement.png")
         plots.plot_picks(picks, RULES + ["oracle"], figs / "fig6_picks.png")
         if not lw.empty:
             plots.plot_learned_weights(lw, lsum, cut, figs / "fig10_learned_weights.png")

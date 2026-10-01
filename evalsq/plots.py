@@ -311,3 +311,62 @@ def plot_h2_regret(summary: pd.DataFrame, rules: list[str], path: Path) -> Path:
     fig.text(0.99, 0.01, "which fixed rule is best is only known in hindsight",
              ha="right", fontsize=8, color="#5E554F")
     return _save(fig, path)
+
+
+def _heat(ax, m: pd.DataFrame, cmap, norm, fmt, labels: dict):
+    """Annotated square heatmap; lower triangle + diagonal only when m is symmetric."""
+    vals = m.values.astype(float)
+    sym = np.allclose(np.nan_to_num(vals), np.nan_to_num(vals.T))
+    shown = np.where(np.triu(np.ones_like(vals, bool), 1), np.nan, vals) if sym else vals
+    ax.imshow(shown, cmap=cmap, norm=norm, interpolation="nearest")
+    lim = max(abs(norm.vmin), abs(norm.vmax))
+    for (i, j), v in np.ndenumerate(shown):
+        if not np.isnan(v):
+            ax.text(j, i, fmt(v), ha="center", va="center", fontsize=9, color=PAPER if abs(v) > 0.6 * lim else INK)
+    names = [labels.get(c, c) for c in m.columns]
+    ax.set_xticks(range(len(names)), names, rotation=35, ha="right", fontsize=8)
+    ax.set_yticks(range(len(m.index)), [labels.get(c, c) for c in m.index], fontsize=8)
+    ax.grid(False)
+    ax.tick_params(length=0)
+
+
+def plot_h3_redundancy(corr: pd.DataFrame, agree: pd.DataFrame, path: Path) -> Path:
+    """Left: within-month rank corr between evals (and the $ each model then earned). Right: how often two rules deploy the same model."""
+    from matplotlib.colors import Normalize, TwoSlopeNorm
+
+    labels = {**RULE_LABELS, "month_ret": "$ that month"}
+    fig, (a, b) = plt.subplots(1, 2, figsize=(10, 4.4))
+    div = LinearSegmentedColormap.from_list("corr", ["#A50F15", "#FFFFFF", "#00838A"])
+    _heat(a, corr, div, TwoSlopeNorm(vmin=-1, vcenter=0, vmax=1), lambda v: f"{v:.2f}", labels)
+    a.set_title("Do two evals rank the 8 models alike?", loc="left", fontsize=10)
+    seq = LinearSegmentedColormap.from_list("agree", ["#FFFFFF", "#765BA7"])
+    _heat(b, agree, seq, Normalize(0, 1), lambda v: f"{v:.0%}", labels)
+    b.set_title("How often do they deploy the same model?", loc="left", fontsize=10)
+    fig.text(0.99, 0.01, "mean within-month Spearman over the zoo, 2018-2025", ha="right", fontsize=8, color="#5E554F")
+    return _save(fig, path)
+
+
+def plot_h3_complementarity(forward: pd.DataFrame, pair: pd.DataFrame, path: Path) -> Path:
+    """Left: greedy forward selection, $ of the mean-rank combo vs # evals. Right: $ gained by adding B to A."""
+    from matplotlib.colors import TwoSlopeNorm
+
+    fig, (a, b) = plt.subplots(1, 2, figsize=(10, 4.2), gridspec_kw={"width_ratios": [1, 1.1]})
+    y = forward["final_usd"] / 1e3
+    a.plot(forward["n"], y, color=INK, lw=1.4, zorder=1)
+    a.scatter(forward["n"], y, s=60, c=[RULE_COLORS.get(r, "#A89E96") for r in forward["added"]], zorder=2)
+    for n, v, r in zip(forward["n"], y, forward["added"]):
+        a.annotate(("" if n == 1 else "+ ") + RULE_LABELS.get(r, r), (n, v), textcoords="offset points",
+                   xytext=(6, 8 if n % 2 else -16), fontsize=8)
+    a.set_xticks(forward["n"])
+    a.set_xlabel("number of evals averaged (mean rank)")
+    a.set_ylabel("deployed $ (k, net)")
+    a.set_ylim(0, y.max() * 1.15)
+    a.set_xlim(0.7, len(forward) + 0.9)
+    a.set_title("Adding the next-best eval", loc="left", fontsize=10)
+    lim = np.abs(pair.values).max() / 1e3
+    cmap = LinearSegmentedColormap.from_list("gain", ["#A50F15", "#FB6A4A", "#FFFFFF", "#74C476", "#00592C"])
+    _heat(b, pair / 1e3, cmap, TwoSlopeNorm(vmin=-lim, vcenter=0, vmax=lim), lambda v: f"{v:+.0f}" if v else "", RULE_LABELS)
+    b.set_xlabel("add this eval (B)")
+    b.set_ylabel("starting eval (A)")
+    b.set_title("$k gained by adding B to A", loc="left", fontsize=10)
+    return _save(fig, path)

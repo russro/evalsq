@@ -5,7 +5,7 @@ from sklearn.linear_model import LogisticRegression
 
 from evalsq.data import FEATURES
 from evalsq.heuristics import combined
-from evalsq.deploy import (COMBINED_OF, RULES, START, apply_costs, apply_rules, deploy_summary, equity, fold_returns, h2_selectors, month_starts,
+from evalsq.deploy import (COMBINED_OF, RULES, START, apply_costs, apply_rules, deploy_summary, equity, fold_returns, h2_selectors, h3_complementarity, h3_redundancy, combo_usd, month_starts,
                            selector_stability,
                            optimal_k, visible_end, walk_forward, winners_curse,
                            winners_curse_monthly)
@@ -66,7 +66,7 @@ def test_rules_pick_argmax():
     rng = np.random.default_rng(0)
     s = _scores([f"2020-{m:02d}" for m in range(1, 13)], ["A", "B", "C"], rng)
     picks = apply_rules(s)
-    s["combined"] = combined(s, COMBINED_OF, by="month")  # apply_rules derives it from the other rules
+    s["combined"] = combined(s, COMBINED_OF, by="month").round(9)  # apply_rules derives it from the other rules
     for rule in RULES + ["oracle"]:
         col = "month_ret" if rule == "oracle" else rule
         want = s.loc[s.groupby("month")[col].idxmax(), "model"].values
@@ -233,3 +233,35 @@ def test_h2_selectors_one_row_per_block():
     assert list(summary["block_years"]) == [1, 2]
     assert summary["hit_rate"].between(0, 1).all()
     assert (summary[[c for c in summary if c.startswith("fixed_") or c in ("follow_leader", "random")]] >= 0).all().all()
+
+
+def test_h3_redundancy_identical_rules_agree():
+    rng = np.random.default_rng(0)
+    s = _scores([f"2018-{m:02d}" for m in range(1, 13)], list("ABCD"), rng)
+    s["auc"] = s["accuracy"] * 2  # same ranking, different scale
+    s.loc[s["month"] == "2018-01", "bear_acc"] = np.nan  # undefined month is skipped, not zeroed
+    corr, agree = h3_redundancy(s, apply_rules(s))
+    assert list(corr.columns) == COMBINED_OF + ["month_ret"]
+    assert corr.loc["accuracy", "auc"] == pytest.approx(1) and agree.loc["accuracy", "auc"] == 1
+    assert corr.notna().all().all() and np.allclose(corr, corr.T)
+
+
+def test_combo_usd_single_rule_matches_rule():
+    rng = np.random.default_rng(1)
+    s = _scores([f"2018-{m:02d}" for m in range(1, 13)], list("ABC"), rng)
+    s[["flips", "short_days", "first_pos", "last_pos"]] = [0, 0, 1, 1]
+    picks = apply_costs(apply_rules(s), s)
+    assert combo_usd(s, ["accuracy"]) == pytest.approx(equity(picks)["accuracy"].iloc[-1])
+    assert combo_usd(s, COMBINED_OF) == pytest.approx(equity(picks)["combined"].iloc[-1])
+
+
+def test_h3_complementarity_forward_and_pairs():
+    rng = np.random.default_rng(2)
+    s = _scores([f"2018-{m:02d}" for m in range(1, 13)], list("ABC"), rng)
+    s[["flips", "short_days", "first_pos", "last_pos"]] = [0, 0, 1, 1]
+    fwd, pair = h3_complementarity(s)
+    assert list(fwd["n"]) == [1, 2, 3, 4, 5] and sorted(fwd["added"]) == sorted(COMBINED_OF)
+    assert fwd["final_usd"].iloc[0] == max(combo_usd(s, [r]) for r in COMBINED_OF)
+    assert fwd["final_usd"].iloc[-1] == pytest.approx(combo_usd(s, COMBINED_OF))
+    assert (np.diag(pair) == 0).all()
+    assert pair.loc["accuracy", "auc"] == pytest.approx(combo_usd(s, ["accuracy", "auc"]) - combo_usd(s, ["accuracy"]))
