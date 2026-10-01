@@ -378,9 +378,12 @@ def plot_h3_complementarity(forward: pd.DataFrame, pair: pd.DataFrame, path: Pat
     y = forward["final_usd"] / 1e3
     a.plot(forward["n"], y, color=INK, lw=1.4, zorder=1)
     a.scatter(forward["n"], y, s=60, c=[RULE_COLORS.get(r, "#A89E96") for r in forward["added"]], zorder=2)
-    for n, v, r in zip(forward["n"], y, forward["added"]):
+    for i, (n, v, r) in enumerate(zip(forward["n"], y, forward["added"])):
+        # label on the side away from the line: above if the point sits above its neighbours' mean
+        nb = y.iloc[max(i - 1, 0):i + 2].drop(y.index[i])
+        up = v >= nb.mean()
         a.annotate(("" if n == 1 else "+ ") + RULE_LABELS.get(r, r), (n, v), textcoords="offset points",
-                   xytext=(6, 8 if n % 2 else -16), fontsize=8)
+                   xytext=(0, 9 if up else -10), ha="left" if i == 0 else "center", va="bottom" if up else "top", fontsize=8)
     a.set_xticks(forward["n"])
     a.set_xlabel("number of evals averaged (mean rank)")
     a.set_ylabel("deployed $ (k, net)")
