@@ -44,19 +44,26 @@ def save(fig, name):
 
 
 def pipeline():
-    """Slide 3: Data -> Models -> Bench -> Deploy -> $, with the slow money loop and a ? on the bench."""
-    fig, ax = canvas(10, 3.4)
-    xs = [1, 3.25, 5.5, 7.75]
-    for x, t in zip(xs, ["Data", "Models", "Benchmark", "Deploy"]):
-        box(ax, x, 2.2, t, color=RED if t == "Benchmark" else BLUE)
-    for a, b in zip(xs, xs[1:]):
-        arrow(ax, (a + 0.95, 2.2), (b - 0.95, 2.2))
-    box(ax, 9.3, 2.2, "$", w=0.8, color=GREEN, fs=14)
-    arrow(ax, (8.7, 2.2), (8.85, 2.2))
-    ax.text(5.5, 2.85, "?", ha="center", fontsize=22, color=INK, weight="bold")
-    arrow(ax, (9.3, 1.75), (5.5, 1.75), color=GREY, rad=-0.35, ls="--")
-    ax.text(7.4, 0.7, "real outcome: arrives L days late", ha="center", fontsize=10, color=GREY)
-    ax.text(5.5, 0.2, "we decide on the bench because the money is not in yet", ha="center", fontsize=9, color=GREY)
+    """Slide 3: ML lifecycle. Data -> Models -> Eval -> Deploy -> $ inside one iteration box, $ feeds the next
+    iteration's data, the money loop arrives late, and a ? on the eval."""
+    fig, ax = canvas(10, 4.6)
+    y, w, d = 2.3, 1.5, 0.08
+    xs = [1.2, 3.3, 5.4, 7.5]
+    dx = 9.3
+    ax.add_patch(FancyBboxPatch((0.25, 1.05), 9.6, 2.05, boxstyle="round,pad=0.05",
+                                fc="none", ec=GREY, lw=1.0, ls=(0, (4, 3))))
+    ax.text(0.35, 1.2, "one iteration", fontsize=9, color=GREY, va="center")
+    for x, t in zip(xs, ["Data", "Models", "Eval", "Deploy"]):
+        box(ax, x, y, t, w=w, color=RED if t == "Eval" else BLUE)
+    for a, b in zip(xs + [dx], xs[1:] + [dx]):
+        if a != b:
+            arrow(ax, (a + w / 2 + d, y), (b - (0.4 if b == dx else w / 2) - d, y))
+    box(ax, dx, y, "$", w=0.8, color=GREEN, fs=14)
+    ax.text(xs[2], 2.75, "?", ha="center", fontsize=18, color=INK, weight="bold")
+    arrow(ax, (dx, 2.72), (xs[0], 2.72), rad=0.22)
+    ax.text(5.1, 3.75, "next iteration: new data, retrain, re-eval", ha="center", fontsize=10, color=INK)
+    arrow(ax, (dx, 1.85), (xs[2], 1.85), color=GREY, rad=-0.2, ls="--")
+    ax.text(7.2, 1.18, "real outcome: arrives L days late", ha="center", fontsize=10, color=GREY)
     save(fig, "mock_pipeline.png")
 
 
@@ -84,9 +91,8 @@ def bench_of_bench():
         arrow(ax, (2.35, y), (3.9, 1.9))
     box(ax, 4.9, 1.9, "pick model\neach month", w=1.9, h=0.9, color=ORANGE, fs=10)
     arrow(ax, (5.9, 1.9), (7.0, 1.9))
-    box(ax, 7.9, 1.9, "$ after\n8 years", w=1.6, h=0.9, color=GREEN, fs=10)
+    box(ax, 7.9, 1.9, "$ after\nN months", w=1.6, h=0.9, color=GREEN, fs=10)
     arrow(ax, (7.9, 1.4), (1.3, 0.55), color=GREY, rad=-0.25, ls="--")
-    ax.text(7.9, 2.9, "grade the metric, not the model", ha="center", fontsize=10, color=INK)
     save(fig, "mock_bench_of_bench.png")
 
 
@@ -94,7 +100,7 @@ def heuristics_map():
     """Slide 7: the three checks, ordered familiar -> unusual, each tied to what it asks."""
     fig, ax = canvas(10, 2.6)
     items = [("H1  Validity", "does the score track $?", BLUE),
-             ("H2  Temporal holdout", "does the ranking survive time?", BLUE),
+             ("H2  Selector stability", "does the best eval stay the best?", BLUE),
              ("H3  Meta-model", "is the score just the regime?", BLUE)]
     for i, (h, q, c) in enumerate(items):
         x = 1.7 + i * 3.3
