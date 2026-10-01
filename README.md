@@ -30,7 +30,7 @@ SPY daily close. Models are trained on 2010 to 2017 and scored from 2018 onward.
 
 ![h1](figures/fig2_h1_validity.png)
 
-Correlation between each candidate metric and the strategy's Sharpe ratio, computed per month. (a) Over the whole test period, accuracy has the highest correlation (0.82) and AUC the lowest (0.35). (b) The same correlation over a 24-month rolling window, averaged over the two models. Accuracy stays between 0.62 and 0.92 for both models, while AUC for the logistic regression drops to -0.55 in 2023, which means that months with a higher AUC tended to have a lower return during that window. Accuracy on downtrend days has gaps since many months have too few such days to score.
+Correlation between each candidate metric and the strategy's Sharpe ratio, computed per month. (a) Over the whole test period, accuracy has the highest correlation (0.82) and AUC the lowest (0.35). (b) The same correlation over a 24-month rolling window, averaged over the two models. Accuracy stays between 0.62 and 0.92 for both models, while AUC for the logistic regression drops to -0.55 in 2023, which means that months with a higher AUC tended to have a lower return during that window. Accuracy on downtrend days has gaps because it needs at least 3 days below the 50-day average in a month, and only 44 of the 96 test months have that, mostly outside the 2018 to 2022 bull run. The combined score (mean percentile rank over the five metrics) correlates at 0.75 overall, below accuracy alone.
 
 ### H2. Temporal holdout
 
@@ -42,7 +42,11 @@ Accuracy of each model when trained on every year before the test year and score
 
 ![h3](figures/fig4_h3_meta.png)
 
-A linear model that predicts the random forest's yearly accuracy from the mean volatility and trend of that year, scored with leave-one-out. A high R² would mean that the benchmark mostly measures the market regime instead of the model. Here the R² is -0.38, so these two features do not predict the score, and the yearly accuracy still carries information about the model.
+A linear model that predicts the random forest's accuracy from the mean volatility and trend of the period, scored with leave-one-out. (a) per year, (b) per month; color goes from early (teal) to late (pink). A high R² would mean that the benchmark mostly measures the market regime instead of the model. Here the R² is -0.38 per year and -0.03 per month, so these two features do not predict the score, and the yearly accuracy still carries information about the model.
+
+### Deployment and the Bogleheads line
+
+`fig5_deploy.png` shows portfolio value under each selection rule, including `combined` (the model with the best mean rank over the other five rules that month). `fig5b_deploy_bogle.png` adds a Bogleheads three-fund portfolio (60% VTI, 20% VXUS, 20% BND, rebalanced monthly; `--no-bogle` skips it). The combined rule ends at $177k, below accuracy alone ($222k). The three-fund portfolio ends at $215k, under always-long SPY ($287k) because of the bond and international share.
 
 ### Backup: winner's curse spread and best pool size
 
@@ -52,7 +56,7 @@ Monthly gap between the winner's bench accuracy and its deployed accuracy, per p
 
 ![optk](figures/fig9_opt_k.png)
 
-The pool size whose winner deployed best, month by month, and the 12-month rolling std of log2 k. The best k is 1 in 32 months and 25 in 39, and it flips between the two with no link to the crash or the bear market. Deployed accuracy barely moves with k (54.0% to 54.4%), so a bigger search only inflates the bench number.
+The pool size whose winner deployed best, month by month, with its 12-month mean, and the 12-month rolling std of k. The best k is 1 in 32 months and 25 in 39, and it flips between the two with no link to the crash or the bear market. Deployed accuracy barely moves with k (54.0% to 54.4%), so a bigger search only inflates the bench number.
 
 ## Code
 
