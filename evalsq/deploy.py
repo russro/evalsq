@@ -206,3 +206,50 @@ def optimal_k(monthly: pd.DataFrame, window: int = 12) -> pd.DataFrame:
     best = best.rename(columns={"k": "opt_k"}).sort_values("month").reset_index(drop=True)
     best["opt_k_vol"] = best["opt_k"].rolling(window, min_periods=window).std()
     return best
+
+
+# ── H2: Selector stability (does the best eval stay the best?) ──────────────
+
+def fold_returns(picks: pd.DataFrame, block_years: int = 2) -> pd.DataFrame:
+    """Fold x rule table of compounded return, folds = consecutive blocks of `block_years` calendar years.
+
+    Blocked by time, not shuffled, so no fold peeks at a later regime. A trailing partial block is kept.
+    """
+    p = picks[picks["rule"].isin(RULES)]
+    yr = p["month"].str[:4].astype(int)
+    first = yr.min()
+    start = first + (yr - first) // block_years * block_years
+    end = np.minimum(start + block_years - 1, yr.max())
+    label = start.astype(str).where(start == end, start.astype(str) + "-" + (end % 100).map("{:02d}".format))
+    out = p.assign(fold=label).groupby(["fold", "rule"])["month_ret"].apply(lambda r: float(np.prod(1 + r) - 1))
+    return out.unstack()[RULES]
+
+
+def selector_stability(folds: pd.DataFrame) -> dict:
+    """Grade the selectors themselves across folds.
+
+    hit_rate: share of fold k -> k+1 transitions where fold k's best rule is best again (chance = 1/n_rules).
+    Regret (return pts lost vs the best rule in hindsight, averaged over folds 2..n, so every strategy is
+    scored on the same folds): follow_leader trusts last fold's winner, random picks a rule uniformly,
+    fixed_<rule> always uses that rule.
+    """
+    win = folds.idxmax(axis=1)
+    best = folds.max(axis=1)
+    nxt = folds.iloc[1:]
+    leader = win.shift().iloc[1:]
+    out = {
+        "n_folds": len(folds),
+        "hit_rate": float((win.iloc[1:] == leader).mean()),
+        "chance": 1 / folds.shape[1],
+        "follow_leader": float((best.iloc[1:] - [nxt.loc[f, r] for f, r in leader.items()]).mean()),
+        "random": float((best.iloc[1:] - nxt.mean(axis=1)).mean()),
+    }
+    out.update({f"fixed_{r}": float((best.iloc[1:] - nxt[r]).mean()) for r in folds.columns})
+    return out
+
+
+def h2_selectors(picks: pd.DataFrame, blocks: tuple = (1, 2)) -> tuple[dict, pd.DataFrame]:
+    """Per block size: the fold x rule table and a stability row. Returns ({block: folds}, summary)."""
+    folds = {b: fold_returns(picks, b) for b in blocks}
+    summary = pd.DataFrame([{"block_years": b, **selector_stability(f)} for b, f in folds.items()])
+    return folds, summary

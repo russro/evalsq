@@ -1,7 +1,7 @@
-"""H1 / H2 / H3 benchmark evaluation heuristics.
+"""H1 / H3 benchmark evaluation heuristics.
 
 Benchmark = directional accuracy. Business value = Sharpe of a long/short strategy
-that trades the model's next-day call.
+that trades the model's next-day call. H2 (selector stability) lives in deploy.py.
 """
 
 import numpy as np
@@ -104,10 +104,11 @@ def h1_summary(h1: pd.DataFrame, roll: pd.DataFrame) -> pd.DataFrame:
     return out.reset_index()
 
 
-# ── H2: Temporal Holdout ─────────────────────────────────────────────────────
+# ── Yearly holdout (input to H3) ─────────────────────────────────────────────
+# Old H2 (does the winning model hold over time?) is retired; H2 now grades the selectors (deploy.h2_selectors).
 
-def h2_temporal(df: pd.DataFrame, years: list[int] | None = None) -> pd.DataFrame:
-    """Expanding-window train, single-year test. One row per test year; 'winner' = top model."""
+def yearly_holdout(df: pd.DataFrame, years: list[int] | None = None) -> pd.DataFrame:
+    """Expanding-window train, single-year test. One row per test year with each model's accuracy."""
     if years is None:
         years = list(range(2015, df.index.year.max() + 1))
     rows = []
@@ -121,21 +122,12 @@ def h2_temporal(df: pd.DataFrame, years: list[int] | None = None) -> pd.DataFram
             m.fit(sc.transform(tr[FEATURES]), tr["target"])
             row[name] = float((predict(m, sc, te) == te["target"]).mean())
         rows.append(row)
-    h2 = pd.DataFrame(rows)
-    names = list(make_models())
-    h2["winner"] = h2[names].idxmax(axis=1)
-    return h2
-
-
-def h2_rank_flips(h2: pd.DataFrame) -> int:
-    """Number of year-over-year changes in the top-ranked model."""
-    w = h2["winner"]
-    return int((w != w.shift()).iloc[1:].sum())
+    return pd.DataFrame(rows)
 
 
 # ── H3: Predictability Test (meta-model) ─────────────────────────────────────
 
-def h3_meta(df: pd.DataFrame, h2: pd.DataFrame, model: str = "RF") -> tuple[pd.DataFrame, float]:
+def h3_meta(df: pd.DataFrame, yearly: pd.DataFrame, model: str = "RF") -> tuple[pd.DataFrame, float]:
     """
     Predict a model's yearly accuracy from market regime features (vol, trend).
     Returns (table, leave-one-out R²). LOO because n≈10: in-sample R² would flatter the fit.
@@ -146,7 +138,7 @@ def h3_meta(df: pd.DataFrame, h2: pd.DataFrame, model: str = "RF") -> tuple[pd.D
         "vol": float(df.loc[df.index.year == yr, "vol20"].mean()),
         "trend": float(df.loc[df.index.year == yr, "ma50"].mean()),
         "acc": float(acc),
-    } for yr, acc in zip(h2["test_year"], h2[model])]
+    } for yr, acc in zip(yearly["test_year"], yearly[model])]
     meta = pd.DataFrame(rows)
     if len(meta) < 4:
         return meta, float("nan")

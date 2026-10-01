@@ -7,10 +7,10 @@ import pandas as pd
 
 from .data import download_bogle, load
 from . import plots
-from .heuristics import h1_rolling, h1_summary, h1_validity, h2_rank_flips, h2_temporal, h3_meta, h3_meta_monthly
+from .heuristics import h1_rolling, h1_summary, h1_validity, h3_meta, h3_meta_monthly, yearly_holdout
 from .models import accuracy, fit_models, make_grid, make_zoo, train_test_split_by_year
 from .learned import learned_summary
-from .deploy import BORROW, COST_BP, REFERENCES, RULES, START, apply_costs, apply_rules, curse_by_k, deploy_summary, equity, optimal_k, walk_forward, winners_curse_monthly
+from .deploy import BORROW, COST_BP, REFERENCES, RULES, START, apply_costs, apply_rules, curse_by_k, deploy_summary, equity, h2_selectors, optimal_k, walk_forward, winners_curse_monthly
 
 
 def _section(title: str) -> None:
@@ -56,18 +56,15 @@ def main(argv: list[str] | None = None) -> None:
     roll.to_csv(out / "h1_rolling.csv", index=False)
     summary.to_csv(out / "h1_summary.csv", index=False)
 
-    _section("H2: Temporal Holdout (rank stability)")
-    h2 = h2_temporal(df)
-    print(h2.round(4).to_string(index=False))
-    print(f"\n  Rank flips: {h2_rank_flips(h2)} / {len(h2) - 1} transitions")
-    h2.to_csv(out / "h2_temporal.csv", index=False)
-
     _section("H3: Predictability Test (meta-model)")
-    meta, r2 = h3_meta(df, h2)
+    yearly = yearly_holdout(df)
+    print(yearly.round(4).to_string(index=False))
+    yearly.to_csv(out / "h3_yearly.csv", index=False)
+    meta, r2 = h3_meta(df, yearly)
     print(meta.round(4).to_string(index=False))
     print(f"\n  Meta-model LOO R² = {r2:.3f}  (high → score tracks regime, not model)")
     meta.to_csv(out / "h3_meta.csv", index=False)
-    meta_m, r2_m = h3_meta_monthly(df, list(h2["test_year"]))
+    meta_m, r2_m = h3_meta_monthly(df, list(yearly["test_year"]))
     print(f"  Monthly version: LOO R² = {r2_m:.3f} over {len(meta_m)} months")
     meta_m.to_csv(out / "h3_meta_monthly.csv", index=False)
 
@@ -93,6 +90,15 @@ def main(argv: list[str] | None = None) -> None:
     picks.to_csv(out / "deploy_picks.csv", index=False)
     dep.to_csv(out / "deploy_summary.csv", index=False)
     sweep.to_csv(out / "deploy_cost_sweep.csv", index=False)
+
+    _section("H2: Selector stability (does the best eval stay the best?)")
+    h2_folds, h2 = h2_selectors(picks)
+    for b, f in h2_folds.items():
+        print(f"  {b}-year folds, compounded net return:")
+        print(f.round(3).to_string())
+        f.to_csv(out / f"h2_folds_{b}y.csv")
+    print(h2.round(3).to_string(index=False))
+    h2.to_csv(out / "h2_selectors.csv", index=False)
 
     _section(f"Learned benchmark: ridge on bench signals, trained on {scores_all['month'].iloc[0]} on")
     lsum, lw, lpicks = learned_summary(scores_all, cut, cost_bp=args.cost_bp, borrow=args.borrow)
@@ -123,7 +129,6 @@ def main(argv: list[str] | None = None) -> None:
         figs.mkdir(parents=True, exist_ok=True)
         plots.plot_setup(df, args.cutoff, figs / "fig1_setup.png")
         plots.plot_h1(summary, roll, figs / "fig2_h1_validity.png")
-        plots.plot_h2(h2, figs / "fig3_h2_holdout.png")
         plots.plot_h3(meta, r2, meta_m, r2_m, figs / "fig4_h3_meta.png")
         eq = equity(picks)
         plots.plot_deploy(eq, RULES, figs / "fig5_deploy.png")
@@ -131,6 +136,8 @@ def main(argv: list[str] | None = None) -> None:
             bogle = download_bogle(args.bogle).reindex(eq.index).fillna(0)
             eq["bogle"] = START * (1 + bogle).cumprod()
             plots.plot_deploy(eq, RULES, figs / "fig5b_deploy_bogle.png")
+        plots.plot_h2_folds(h2_folds, figs / "fig3_h2_folds.png")
+        plots.plot_h2_regret(h2, RULES, figs / "fig3b_h2_regret.png")
         plots.plot_picks(picks, RULES + ["oracle"], figs / "fig6_picks.png")
         if not lw.empty:
             plots.plot_learned_weights(lw, lsum, cut, figs / "fig10_learned_weights.png")

@@ -5,7 +5,8 @@ from sklearn.linear_model import LogisticRegression
 
 from evalsq.data import FEATURES
 from evalsq.heuristics import combined
-from evalsq.deploy import (COMBINED_OF, RULES, START, apply_costs, apply_rules, deploy_summary, equity, month_starts,
+from evalsq.deploy import (COMBINED_OF, RULES, START, apply_costs, apply_rules, deploy_summary, equity, fold_returns, h2_selectors, month_starts,
+                           selector_stability,
                            optimal_k, visible_end, walk_forward, winners_curse,
                            winners_curse_monthly)
 from evalsq.models import make_grid, make_zoo
@@ -191,3 +192,44 @@ def test_walk_forward_skips_months_without_enough_history(featured_df):
     s = walk_forward(featured_df, SMALL_ZOO, featured_df.index[0].year, n_jobs=1)
     first = pd.Period(s["month"].min(), "M").to_timestamp()
     assert (featured_df.index < first).sum() >= 500 + 63 + 21
+
+
+def _picks(rets: dict) -> pd.DataFrame:
+    """Picks table from {rule: [monthly returns]}, 12 months per year from 2018."""
+    n = len(next(iter(rets.values())))
+    months = [str(p) for p in pd.period_range("2018-01", periods=n, freq="M")]
+    return pd.DataFrame([{"month": m, "rule": r, "model": "A", "month_ret": v}
+                         for r, vs in rets.items() for m, v in zip(months, vs)])
+
+
+def test_fold_returns_compound_per_block():
+    rets = {r: [0.0] * 36 for r in RULES}
+    rets["bear_acc"] = [0.01] * 36
+    picks = pd.concat([_picks(rets), pd.DataFrame([{"month": "2018-01", "rule": "oracle", "model": "A", "month_ret": 9.0}])])
+    f1, f2 = fold_returns(picks, 1), fold_returns(picks, 2)
+    assert list(f1.index) == ["2018", "2019", "2020"] and list(f1.columns) == RULES  # references dropped
+    assert list(f2.index) == ["2018-19", "2020"]  # trailing partial block kept
+    assert f1.loc["2018", "bear_acc"] == pytest.approx(1.01 ** 12 - 1)
+    assert f2.loc["2018-19", "bear_acc"] == pytest.approx(1.01 ** 24 - 1)
+    assert (f1["accuracy"] == 0).all()
+
+
+def test_selector_stability_hit_rate_and_regret():
+    folds = pd.DataFrame({"a": [0.3, 0.1, 0.0], "b": [0.0, 0.2, 0.4]}, index=["f1", "f2", "f3"])
+    s = selector_stability(folds)
+    # winners a, b, b -> one repeat out of two transitions
+    assert s["hit_rate"] == 0.5 and s["chance"] == 0.5 and s["n_folds"] == 3
+    # follow leader: f2 uses a (0.1 vs best 0.2), f3 uses b (0.4) -> regret 0.05
+    assert s["follow_leader"] == pytest.approx(0.05)
+    assert s["random"] == pytest.approx(((0.2 - 0.15) + (0.4 - 0.2)) / 2)
+    assert s["fixed_a"] == pytest.approx((0.1 + 0.4) / 2) and s["fixed_b"] == 0
+
+
+def test_h2_selectors_one_row_per_block():
+    rng = np.random.default_rng(0)
+    picks = _picks({r: rng.normal(0, 0.03, 48) for r in RULES})
+    folds, summary = h2_selectors(picks)
+    assert set(folds) == {1, 2} and len(folds[1]) == 4 and len(folds[2]) == 2
+    assert list(summary["block_years"]) == [1, 2]
+    assert summary["hit_rate"].between(0, 1).all()
+    assert (summary[[c for c in summary if c.startswith("fixed_") or c in ("follow_leader", "random")]] >= 0).all().all()

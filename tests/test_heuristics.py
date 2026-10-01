@@ -6,7 +6,7 @@ import pytest
 
 from evalsq.heuristics import (
     BASE_METRICS, METRICS, _metrics, combined, _score, h1_correlation, h1_rolling, h1_summary, h1_validity,
-    h2_rank_flips, h2_temporal, h3_meta, h3_meta_monthly,
+    h3_meta, h3_meta_monthly, yearly_holdout,
 )
 from evalsq.models import fit_models, train_test_split_by_year
 
@@ -22,8 +22,8 @@ def fitted(featured_df):
 
 
 @pytest.fixture
-def h2(featured_df):
-    return h2_temporal(featured_df, years=TEST_YEARS)
+def yearly(featured_df):
+    return yearly_holdout(featured_df, years=TEST_YEARS)
 
 
 def test_score_perfect_predictions_positive_sharpe():
@@ -73,20 +73,13 @@ def test_h1_rolling(fitted):
     assert roll["rolling_corr"].between(-1, 1).all()
 
 
-def test_h2_winner_is_argmax(h2):
-    assert len(h2) == len(TEST_YEARS)
-    for _, r in h2.iterrows():
-        assert r[r["winner"]] == max(r["LogReg"], r["RF"])
+def test_yearly_holdout_one_row_per_year(yearly):
+    assert list(yearly["test_year"]) == TEST_YEARS
+    assert yearly[["LogReg", "RF"]].stack().between(0, 1).all()
 
 
-def test_h2_rank_flips_counts_transitions_only():
-    h2 = pd.DataFrame({"winner": ["RF", "RF", "LogReg", "LogReg", "RF"]})
-    assert h2_rank_flips(h2) == 2
-    assert h2_rank_flips(pd.DataFrame({"winner": ["RF"] * 4})) == 0
-
-
-def test_h3_loo_r2(featured_df, h2):
-    meta, r2 = h3_meta(featured_df, h2)
+def test_h3_loo_r2(featured_df, yearly):
+    meta, r2 = h3_meta(featured_df, yearly)
     assert len(meta) == len(TEST_YEARS)
     assert "pred_acc" in meta.columns
     assert not math.isnan(r2)

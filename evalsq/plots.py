@@ -108,25 +108,6 @@ def plot_h1(summary: pd.DataFrame, roll: pd.DataFrame, path: Path) -> Path:
     return _save(fig, path)
 
 
-def plot_h2(h2: pd.DataFrame, path: Path) -> Path:
-    """Per-year accuracy of each model; years where the top model changes are marked."""
-    models = [c for c in h2.columns if c in MODEL_COLORS]
-    fig, ax = plt.subplots(figsize=(8, 3.2))
-    width = 0.8 / len(models)
-    x = range(len(h2))
-    for i, m in enumerate(models):
-        ax.bar([j + (i - (len(models) - 1) / 2) * width for j in x], h2[m], width, color=MODEL_COLORS[m], label=MODEL_LABELS.get(m, m))
-    flips = h2["winner"] != h2["winner"].shift()
-    for j in [j for j in x if j > 0 and flips.iloc[j]]:
-        ax.annotate("winner\nchanges", (j, h2.loc[j, models].max() + 0.005), ha="center", fontsize=8, color="#FF48B0")
-    ax.axhline(0.5, color="#5E554F", lw=0.8, ls=":")
-    ax.set_xticks(list(x), h2["test_year"].astype(str))
-    ax.set_ylim(0.4, max(0.62, h2[models].max().max() + 0.03))
-    ax.set_ylabel("accuracy")
-    ax.legend(frameon=False, ncol=len(models), loc="upper left")
-    return _save(fig, path)
-
-
 def _meta_panel(ax, meta: pd.DataFrame, when: pd.Series, r2: float, title: str):
     """Observed vs. LOO-predicted accuracy, points colored by date."""
     sc = ax.scatter(meta["acc"], meta["pred_acc"], c=when, cmap=TIME_CMAP, s=28, edgecolor=INK, lw=0.3, zorder=3)
@@ -274,4 +255,52 @@ def plot_learned_weights(w: pd.DataFrame, summary: pd.DataFrame, cutoff: str, pa
         ax.set_title(f"{MODE_TITLES.get(mode, mode)}  (deployed ${usd[mode] / 1e3:,.0f}k)", loc="left", fontsize=10)
     np.atleast_1d(axes)[0].legend(fontsize=8, frameon=False, loc="upper left", bbox_to_anchor=(1.01, 1))
     fig.supylabel("ridge weight")
+    return _save(fig, path)
+
+
+def plot_h2_folds(folds: dict, path: Path) -> Path:
+    """Rule x fold heatmap per block size: color = rank within the fold (dark = best), text = fold return."""
+    from matplotlib.colors import ListedColormap
+
+    fig, axes = plt.subplots(1, len(folds), figsize=(5 + 1.1 * sum(len(f) for f in folds.values()), 3.6),
+                             gridspec_kw={"width_ratios": [len(f) for f in folds.values()]})
+    axes = np.atleast_1d(axes)
+    n = next(iter(folds.values())).shape[1]
+    cmap = ListedColormap(["#00838A", "#5FB3B3", "#B9DCD6", "#E8DCC8", "#F2C7A5", "#FF9A6A"][:n])
+    for ax, (block, f) in zip(axes, folds.items()):
+        rank = f.rank(axis=1, ascending=False, method="min").T
+        ax.imshow(rank.values, aspect="auto", cmap=cmap, vmin=0.5, vmax=n + 0.5, interpolation="nearest")
+        for (i, j), v in np.ndenumerate(f.T.values):
+            ax.text(j, i, f"{v:+.0%}", ha="center", va="center", fontsize=8,
+                    color=PAPER if rank.values[i, j] == 1 else INK, fontweight="bold" if rank.values[i, j] == 1 else None)
+        ax.set_xticks(range(len(f)), f.index)
+        ax.set_yticks(range(n), [RULE_LABELS.get(r, r) for r in f.columns] if ax is axes[0] else [])
+        ax.set_title(f"{block}-year folds", loc="left")
+        ax.grid(False)
+        ax.tick_params(length=0)
+    fig.text(0.99, 0.01, "dark = best rule in that fold", ha="right", fontsize=8, color="#5E554F")
+    return _save(fig, path)
+
+
+def plot_h2_regret(summary: pd.DataFrame, rules: list[str], path: Path) -> Path:
+    """Regret (return pts vs the best rule in hindsight) of trusting last fold's winner vs fixed rules and a random pick."""
+    strategies = ["follow_leader", "random"] + [f"fixed_{r}" for r in rules]
+    labels = {"follow_leader": "Last fold's winner", "random": "Random rule",
+              **{f"fixed_{r}": f"Always {RULE_LABELS.get(r, r)}" for r in rules}}
+    colors = {"follow_leader": "#FFB511", "random": "#A89E96", **{f"fixed_{r}": RULE_COLORS.get(r, "#A89E96") for r in rules}}
+    fig, axes = plt.subplots(1, len(summary), figsize=(5 * len(summary), 3.6), sharey=True)
+    axes = np.atleast_1d(axes)
+    for ax, (_, row) in zip(axes, summary.iterrows()):
+        vals = row[strategies].astype(float) * 100
+        ax.barh(range(len(strategies)), vals, color=[colors[s] for s in strategies])
+        for i, v in enumerate(vals):
+            ax.text(v, i, f" {v:.1f}", va="center", fontsize=8)
+        ax.set_yticks(range(len(strategies)), [labels[s] for s in strategies])
+        ax.set_xlabel("regret (return pts per fold)")
+        ax.set_title(f"{int(row['block_years'])}-year folds: winner repeats {row['hit_rate']:.0%}"
+                     f" (chance {row['chance']:.0%})", loc="left", fontsize=10)
+        ax.set_xlim(0, vals.max() * 1.2 + 1)
+    axes[0].invert_yaxis()  # shared y: invert once
+    fig.text(0.99, 0.01, "which fixed rule is best is only known in hindsight",
+             ha="right", fontsize=8, color="#5E554F")
     return _save(fig, path)
