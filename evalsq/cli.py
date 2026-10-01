@@ -10,7 +10,7 @@ from . import plots
 from .heuristics import h1_rolling, h1_summary, h1_validity, h3_meta, h3_meta_monthly, yearly_holdout
 from .models import accuracy, fit_models, make_grid, make_zoo, train_test_split_by_year
 from .learned import learned_summary, oos_split
-from .deploy import BORROW, COST_BP, REFERENCES, RULES, START, apply_costs, apply_rules, curse_by_k, deploy_summary, equity, h2_selectors, h3_complementarity, h3_redundancy, optimal_k, walk_forward, winners_curse_monthly
+from .deploy import BORROW, COST_BP, REFERENCES, RULES, START, apply_costs, apply_rules, block_label, curse_by_k, deploy_summary, equity, h2_selectors, h3_complementarity, h3_redundancy, optimal_k, walk_forward, winners_curse_monthly
 
 
 def _section(title: str) -> None:
@@ -94,9 +94,9 @@ def main(argv: list[str] | None = None) -> None:
     _section("H2: Selector stability (does the best eval stay the best?)")
     h2_folds, h2 = h2_selectors(picks)
     for b, f in h2_folds.items():
-        print(f"  {b}-year folds, compounded net return:")
+        print(f"  {block_label(b)} folds, compounded net return:")
         print(f.round(3).to_string())
-        f.to_csv(out / f"h2_folds_{b}y.csv")
+        f.to_csv(out / f"h2_folds_{block_label(b)}.csv")
     print(h2.round(3).to_string(index=False))
     h2.to_csv(out / "h2_selectors.csv", index=False)
 

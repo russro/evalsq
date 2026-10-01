@@ -213,17 +213,28 @@ def optimal_k(monthly: pd.DataFrame, window: int = 12) -> pd.DataFrame:
 
 # ── H2: Selector stability (does the best eval stay the best?) ──────────────
 
-def fold_returns(picks: pd.DataFrame, block_years: int = 2) -> pd.DataFrame:
-    """Fold x rule table of compounded return, folds = consecutive blocks of `block_years` calendar years.
+def block_label(block_years: float) -> str:
+    """0.5 -> '6mo', 1 -> '1y'."""
+    return f"{round(block_years * 12)}mo" if block_years < 1 else f"{int(block_years)}y"
+
+
+def fold_returns(picks: pd.DataFrame, block_years: float = 2) -> pd.DataFrame:
+    """Fold x rule table of compounded return, folds = consecutive blocks of `block_years` (0.5 = half-years).
 
     Blocked by time, not shuffled, so no fold peeks at a later regime. A trailing partial block is kept.
     """
     p = picks[picks["rule"].isin(RULES)]
     yr = p["month"].str[:4].astype(int)
-    first = yr.min()
-    start = first + (yr - first) // block_years * block_years
-    end = np.minimum(start + block_years - 1, yr.max())
-    label = start.astype(str).where(start == end, start.astype(str) + "-" + (end % 100).map("{:02d}".format))
+    if block_years < 1:  # sub-year blocks, labelled 2018H1 etc.
+        n = round(block_years * 12)
+        k = (p["month"].str[5:7].astype(int) - 1) // n
+        label = yr.astype(str) + "H" + (k + 1).astype(str) if n == 6 else yr.astype(str) + "-" + (k + 1).astype(str)
+    else:
+        block_years = int(block_years)
+        first = yr.min()
+        start = first + (yr - first) // block_years * block_years
+        end = np.minimum(start + block_years - 1, yr.max())
+        label = start.astype(str).where(start == end, start.astype(str) + "-" + (end % 100).map("{:02d}".format))
     out = p.assign(fold=label).groupby(["fold", "rule"])["month_ret"].apply(lambda r: float(np.prod(1 + r) - 1))
     return out.unstack()[RULES]
 
@@ -251,7 +262,7 @@ def selector_stability(folds: pd.DataFrame) -> dict:
     return out
 
 
-def h2_selectors(picks: pd.DataFrame, blocks: tuple = (1, 2)) -> tuple[dict, pd.DataFrame]:
+def h2_selectors(picks: pd.DataFrame, blocks: tuple = (0.5, 1, 2)) -> tuple[dict, pd.DataFrame]:
     """Per block size: the fold x rule table and a stability row. Returns ({block: folds}, summary)."""
     folds = {b: fold_returns(picks, b) for b in blocks}
     summary = pd.DataFrame([{"block_years": b, **selector_stability(f)} for b, f in folds.items()])

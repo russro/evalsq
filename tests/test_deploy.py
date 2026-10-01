@@ -5,7 +5,7 @@ from sklearn.linear_model import LogisticRegression
 
 from evalsq.data import FEATURES
 from evalsq.heuristics import combined
-from evalsq.deploy import (COMBINED_OF, RULES, START, apply_costs, apply_rules, deploy_summary, equity, fold_returns, h2_selectors, h3_complementarity, h3_redundancy, combo_usd, month_starts,
+from evalsq.deploy import (COMBINED_OF, RULES, START, apply_costs, apply_rules, block_label, deploy_summary, equity, fold_returns, h2_selectors, h3_complementarity, h3_redundancy, combo_usd, month_starts,
                            selector_stability,
                            optimal_k, visible_end, walk_forward, winners_curse,
                            winners_curse_monthly)
@@ -229,10 +229,19 @@ def test_h2_selectors_one_row_per_block():
     rng = np.random.default_rng(0)
     picks = _picks({r: rng.normal(0, 0.03, 48) for r in RULES})
     folds, summary = h2_selectors(picks)
-    assert set(folds) == {1, 2} and len(folds[1]) == 4 and len(folds[2]) == 2
-    assert list(summary["block_years"]) == [1, 2]
+    assert set(folds) == {0.5, 1, 2} and len(folds[0.5]) == 8 and len(folds[1]) == 4 and len(folds[2]) == 2
+    assert list(folds[0.5].index[:2]) == ["2018H1", "2018H2"]
+    assert list(summary["block_years"]) == [0.5, 1, 2]
     assert summary["hit_rate"].between(0, 1).all()
     assert (summary[[c for c in summary if c.startswith("fixed_") or c in ("follow_leader", "random")]] >= 0).all().all()
+
+
+def test_half_year_folds_compound_to_year():
+    rng = np.random.default_rng(1)
+    picks = _picks({r: rng.normal(0, 0.03, 24) for r in RULES})
+    h, y = fold_returns(picks, 0.5), fold_returns(picks, 1)
+    assert np.allclose((1 + h.iloc[0]) * (1 + h.iloc[1]) - 1, y.iloc[0])
+    assert [block_label(b) for b in (0.5, 1, 2)] == ["6mo", "1y", "2y"]
 
 
 def test_h3_redundancy_identical_rules_agree():

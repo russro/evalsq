@@ -18,7 +18,7 @@ def test_cli_end_to_end(tmp_path, featured_df):
     pd.DataFrame({t: 100 + i + np.arange(len(idx)) * 0.01 for i, t in enumerate(BOGLE)}, index=idx).to_csv(bogle, index_label="date")
     main(["--data", str(data), "--out", str(out), "--figs", str(figs), "--cutoff", "2021", "--grid", "3",
           "--bogle", str(bogle)])
-    for f in ["h1_validity", "h1_rolling", "h1_summary", "h3_yearly", "h3_meta", "h2_selectors", "h2_folds_1y", "h2_folds_2y",
+    for f in ["h1_validity", "h1_rolling", "h1_summary", "h3_yearly", "h3_meta", "h2_selectors", "h2_folds_6mo", "h2_folds_1y", "h2_folds_2y",
               "h3_meta_monthly", "deploy_scores", "deploy_picks", "deploy_picks_gross", "deploy_summary", "deploy_cost_sweep", "grid_scores", "winners_curse", "winners_curse_monthly", "optimal_k",
               "deploy_scores_all", "learned_summary", "learned_weights", "learned_picks", "learned_oos"]:
         assert not pd.read_csv(out / f"{f}.csv").empty

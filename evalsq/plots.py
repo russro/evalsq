@@ -259,38 +259,62 @@ def plot_learned_weights(w: pd.DataFrame, summary: pd.DataFrame, cutoff: str, pa
 
 
 def plot_h2_folds(folds: dict, path: Path) -> Path:
-    """Rule x fold heatmap per block size: color = fold return (red < 0 < green), text = rank within the fold."""
-    from matplotlib.colors import TwoSlopeNorm
+    """Nested rule x fold heatmap: each rule gets one row per block size (shortest on top), cells span their fold's time.
 
-    widths = [len(f) for f in folds.values()]
-    fig, axs = plt.subplots(1, len(folds) + 1, figsize=(2.6 + 0.62 * sum(widths), 3.8),
-                            gridspec_kw={"width_ratios": widths + [0.15]})
-    axes, cax = axs[:-1], axs[-1]
-    n = next(iter(folds.values())).shape[1]
-    # Diverging, centered at 0 and symmetric so equal |return| reads as equal intensity; shared across panels.
+    Color = annualized fold return (red < 0 < green), text = rank within the fold. Blocks must tile the same span.
+    """
+    from matplotlib.colors import TwoSlopeNorm
+    from matplotlib.patches import Rectangle
+
+    from .deploy import block_label
+
+    blocks = sorted(folds)
+    unit = blocks[0]  # x unit = shortest block
+    ann = {b: (1 + f) ** (1 / b) - 1 for b, f in folds.items()}  # comparable color across block sizes
+    rules = list(next(iter(folds.values())).columns)
     cmap = LinearSegmentedColormap.from_list("ret", ["#A50F15", "#FB6A4A", "#FFFFFF", "#74C476", "#00592C"])
-    lim = max(np.abs(f.values).max() for f in folds.values())
+    lim = max(np.abs(a.values).max() for a in ann.values())
     norm = TwoSlopeNorm(vmin=-lim, vcenter=0, vmax=lim)
-    for ax, (block, f) in zip(axes, folds.items()):
-        rank = f.rank(axis=1, ascending=False, method="min").T
-        ax.imshow(f.T.values, aspect="auto", cmap=cmap, norm=norm, interpolation="nearest")
-        for (i, j), v in np.ndenumerate(f.T.values):
-            r = int(rank.values[i, j])
-            ax.text(j, i, f"#{r}", ha="center", va="center", fontsize=13,
-                    color=PAPER if abs(v) > 0.55 * lim else INK, fontweight="bold" if r == 1 else None)
-        ax.set_xticks(range(len(f)), f.index, fontsize=8)
-        ax.set_yticks(range(n), [RULE_LABELS.get(r, r) for r in f.columns] if ax is axes[0] else [])
-        ax.set_title(f"{block}-year folds", loc="left")
-        ax.grid(False)
-        ax.tick_params(length=0)
-    cb = fig.colorbar(plt.cm.ScalarMappable(cmap=cmap, norm=norm), cax=cax, format=lambda x, _: f"{x:+.0%}")
-    cb.set_label("fold return (net)", fontsize=8)
+    top, big = blocks[-1], folds[blocks[-1]]
+    span = len(big) * top / unit
+    fig, ax = plt.subplots(figsize=(13, 1.5 * len(rules) + 0.6))
+    sub, gap = 1.0, 0.6
+    for i, rule in enumerate(rules):
+        y0 = i * (len(blocks) * sub + gap)
+        for k, b in enumerate(blocks):
+            y, w = y0 + k * sub, b / unit
+            rk = ann[b].rank(axis=1, ascending=False, method="min")
+            for j, f in enumerate(ann[b].index):
+                v, r = ann[b].loc[f, rule], int(rk.loc[f, rule])
+                ax.add_patch(Rectangle((j * w, y), w, sub, facecolor=cmap(norm(v)), edgecolor=PAPER, lw=1.5))
+                ax.text(j * w + w / 2, y + sub / 2, f"#{r}", ha="center", va="center", fontsize=10 + 2 * k,
+                        color=PAPER if abs(v) > 0.55 * lim else INK, fontweight="bold" if r == 1 else None)
+            ax.text(span + 0.1, y + sub / 2, block_label(b), va="center", fontsize=8, color="#888")
+        ax.text(-0.15, y0 + len(blocks) * sub / 2, RULE_LABELS.get(rule, rule), ha="right", va="center", fontsize=11)
+    w_top = top / unit
+    for j in range(1, len(big)):
+        ax.axvline(j * w_top, color=INK, lw=1.2)
+    ax.set_xlim(0, span + 0.6)
+    ax.set_ylim(len(rules) * (len(blocks) * sub + gap) - gap, -0.4)
+    ax.set_xticks([j * w_top + w_top / 2 for j in range(len(big))], big.index)
+    ax.xaxis.tick_top()
+    ax.set_yticks([])
+    ax.grid(False)
+    ax.tick_params(length=0)
+    for s in ax.spines.values():
+        s.set_visible(False)
+    cb = fig.colorbar(plt.cm.ScalarMappable(cmap=cmap, norm=norm), ax=ax, fraction=0.025, pad=0.02,
+                      format=lambda x, _: f"{x:+.0%}")
+    cb.set_label("annualized fold return (net)", fontsize=8)
     cb.outline.set_visible(False)
+    ax.set_title(f"Rank within each fold: {' / '.join(block_label(b) for b in blocks)} windows", loc="left", pad=28)
     return _save(fig, path)
 
 
 def plot_h2_regret(summary: pd.DataFrame, rules: list[str], path: Path) -> Path:
     """Regret (return pts vs the best rule in hindsight) of trusting last fold's winner vs fixed rules and a random pick."""
+    from .deploy import block_label
+
     strategies = ["follow_leader", "random"] + [f"fixed_{r}" for r in rules]
     labels = {"follow_leader": "Last fold's winner", "random": "Random rule",
               **{f"fixed_{r}": f"Always {RULE_LABELS.get(r, r)}" for r in rules}}
@@ -304,7 +328,7 @@ def plot_h2_regret(summary: pd.DataFrame, rules: list[str], path: Path) -> Path:
             ax.text(v, i, f" {v:.1f}", va="center", fontsize=8)
         ax.set_yticks(range(len(strategies)), [labels[s] for s in strategies])
         ax.set_xlabel("regret (return pts per fold)")
-        ax.set_title(f"{int(row['block_years'])}-year folds: winner repeats {row['hit_rate']:.0%}"
+        ax.set_title(f"{block_label(row['block_years'])} folds: winner repeats {row['hit_rate']:.0%}"
                      f" (chance {row['chance']:.0%})", loc="left", fontsize=10)
         ax.set_xlim(0, vals.max() * 1.2 + 1)
     axes[0].invert_yaxis()  # shared y: invert once
