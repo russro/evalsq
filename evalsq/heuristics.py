@@ -28,7 +28,15 @@ def _score(preds: np.ndarray, w: pd.DataFrame) -> tuple[float, float]:
 # ── H1: Benchmark Validity Modeling ─────────────────────────────────────────
 
 # Candidate benchmarks. Each is "higher is better" so correlations with Sharpe share a sign.
-METRICS = ["accuracy", "auc", "neg_logloss", "bull_acc", "bear_acc"]
+BASE_METRICS = ["accuracy", "auc", "neg_logloss", "bull_acc", "bear_acc"]
+# "combined" = mean percentile rank over BASE_METRICS, one blended score.
+METRICS = BASE_METRICS + ["combined"]
+
+
+def combined(df: pd.DataFrame, cols: list[str], by: str | None = None) -> pd.Series:
+    """Mean percentile rank over cols (within `by` groups if given). Undefined (NaN) metrics are skipped."""
+    ranks = df.groupby(by)[cols] if by else df[cols]
+    return ranks.rank(pct=True).mean(axis=1)
 
 
 def _metrics(preds: np.ndarray, proba: np.ndarray, w: pd.DataFrame) -> dict:
@@ -58,7 +66,9 @@ def h1_validity(df: pd.DataFrame, scaler: StandardScaler, models: dict, freq: st
             _, sharpe = _score(preds.loc[w.index].values, w)
             m = _metrics(preds.loc[w.index].values, proba.loc[w.index].values, w)
             rows.append({"period": str(period), "model": name, **m, "sharpe": sharpe})
-    return pd.DataFrame(rows)
+    out = pd.DataFrame(rows)
+    out.insert(out.columns.get_loc("sharpe"), "combined", combined(out, BASE_METRICS))
+    return out
 
 
 def h1_correlation(h1: pd.DataFrame, metric: str = "accuracy") -> float:
@@ -143,3 +153,23 @@ def h3_meta(df: pd.DataFrame, h2: pd.DataFrame, model: str = "RF") -> tuple[pd.D
     X, y = meta[["vol", "trend"]], meta["acc"]
     meta["pred_acc"] = cross_val_predict(LinearRegression(), X, y, cv=LeaveOneOut())
     return meta, float(r2_score(y, meta["pred_acc"]))
+
+
+def h3_meta_monthly(df: pd.DataFrame, years: list[int], model: str = "RF") -> tuple[pd.DataFrame, float]:
+    """Monthly version of h3_meta: same expanding-window retrain per test year, scored month by month."""
+    rows = []
+    for yr in years:
+        tr, te = df[df.index.year < yr], df[df.index.year == yr]
+        if len(tr) < 200 or len(te) < 50:
+            continue
+        sc = StandardScaler().fit(tr[FEATURES])
+        m = make_models()[model].fit(sc.transform(tr[FEATURES]), tr["target"])
+        hit = pd.Series(predict(m, sc, te) == te["target"].values, index=te.index)
+        for period, w in te.groupby(te.index.to_period("M")):
+            rows.append({"month": str(period), "vol": float(w["vol20"].mean()),
+                         "trend": float(w["ma50"].mean()), "acc": float(hit.loc[w.index].mean())})
+    meta = pd.DataFrame(rows)
+    if len(meta) < 4:
+        return meta, float("nan")
+    meta["pred_acc"] = cross_val_predict(LinearRegression(), meta[["vol", "trend"]], meta["acc"], cv=LeaveOneOut())
+    return meta, float(r2_score(meta["acc"], meta["pred_acc"]))

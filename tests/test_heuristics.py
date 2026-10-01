@@ -5,8 +5,8 @@ import pandas as pd
 import pytest
 
 from evalsq.heuristics import (
-    METRICS, _metrics, _score, h1_correlation, h1_rolling, h1_summary, h1_validity,
-    h2_rank_flips, h2_temporal, h3_meta,
+    BASE_METRICS, METRICS, _metrics, combined, _score, h1_correlation, h1_rolling, h1_summary, h1_validity,
+    h2_rank_flips, h2_temporal, h3_meta, h3_meta_monthly,
 )
 from evalsq.models import fit_models, train_test_split_by_year
 
@@ -50,7 +50,7 @@ def test_metrics_perfect_and_inverted():
     y = w["target"].values
     good = _metrics(y, np.where(y == 1, 0.9, 0.1), w)
     bad = _metrics(1 - y, np.where(y == 1, 0.1, 0.9), w)
-    assert set(good) == set(METRICS)
+    assert set(good) == set(BASE_METRICS)
     assert good["accuracy"] == good["auc"] == good["bull_acc"] == good["bear_acc"] == 1.0
     assert bad["accuracy"] == bad["auc"] == 0.0
     assert good["neg_logloss"] > bad["neg_logloss"]
@@ -90,3 +90,22 @@ def test_h3_loo_r2(featured_df, h2):
     assert len(meta) == len(TEST_YEARS)
     assert "pred_acc" in meta.columns
     assert not math.isnan(r2)
+
+
+def test_combined_is_mean_rank_and_skips_nan():
+    df = pd.DataFrame({"g": ["a", "a", "b", "b"], "x": [1, 2, 3, 4], "y": [2, 1, np.nan, 5]})
+    c = combined(df, ["x", "y"], by="g")
+    assert c.tolist() == [0.75, 0.75, 0.5, 1.0]
+    assert combined(df, ["x"]).tolist() == [0.25, 0.5, 0.75, 1.0]
+
+
+def test_h1_has_combined(fitted):
+    test, scaler, models = fitted
+    h1 = h1_validity(test, scaler, models)
+    assert h1["combined"].between(0, 1).all()
+
+
+def test_h3_monthly(featured_df):
+    meta, r2 = h3_meta_monthly(featured_df, TEST_YEARS)
+    assert len(meta) > 12 * (len(TEST_YEARS) - 1) and meta["month"].is_unique
+    assert meta["acc"].between(0, 1).all() and not math.isnan(r2)
