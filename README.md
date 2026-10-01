@@ -44,7 +44,17 @@ Does the best eval stay the best? The monthly net returns of each selection rule
 
 Regret is the return lost per fold against the best rule in hindsight, averaged over folds 2 onward. Following the previous fold's winner costs 7.2 points a year, less than a random rule (10.9) but more than always using accuracy on downtrend days (3.1), though choosing that fixed rule is itself a hindsight decision. With 4 to 8 folds this is a stability check, not a significance test.
 
-### H3. Predictability of the score
+### H3. Complementarity
+
+![h3a](figures/fig11_h3_redundancy.png)
+
+Within-month rank correlation between the selection rules over the 8 models (left) and how often two rules deploy the same model (right), 2018-2025. Accuracy and lagged P&L move together (0.67), as do AUC and log-loss (0.63); across the two groups they barely agree (0.24). No rule ranks models by that month's return except accuracy on downtrend days, and only weakly (0.09).
+
+![h3b](figures/fig11b_h3_complement.png)
+
+Combining rules by mean rank (the `combined` rule on a subset). Greedy forward selection starts at $320k with downtrend-day accuracy and falls to $167k with all five; averaging dilutes the one rule that carries return information. Right: net $ gained by adding rule B to rule A.
+
+### Notes: can the market predict the score?
 
 ![h3](figures/fig4_h3_meta.png)
 
