@@ -4,7 +4,8 @@ import pytest
 from sklearn.linear_model import LogisticRegression
 
 from evalsq.data import FEATURES
-from evalsq.deploy import (RULES, START, apply_rules, deploy_summary, equity, month_starts,
+from evalsq.heuristics import combined
+from evalsq.deploy import (COMBINED_OF, RULES, START, apply_rules, deploy_summary, equity, month_starts,
                            optimal_k, visible_end, walk_forward, winners_curse,
                            winners_curse_monthly)
 from evalsq.models import make_grid, make_zoo
@@ -64,6 +65,7 @@ def test_rules_pick_argmax():
     rng = np.random.default_rng(0)
     s = _scores([f"2020-{m:02d}" for m in range(1, 13)], ["A", "B", "C"], rng)
     picks = apply_rules(s)
+    s["combined"] = combined(s, COMBINED_OF, by="month")  # apply_rules derives it from the other rules
     for rule in RULES + ["oracle"]:
         col = "month_ret" if rule == "oracle" else rule
         want = s.loc[s.groupby("month")[col].idxmax(), "model"].values

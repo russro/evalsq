@@ -13,10 +13,12 @@ import pandas as pd
 from joblib import Parallel, delayed
 from sklearn.base import clone
 
-from .heuristics import _metrics
+from .heuristics import _metrics, combined
 
 # Selection rules: pick the model with the highest value of this column on the selection window.
-RULES = ["accuracy", "auc", "neg_logloss", "bear_acc", "lagged_pnl"]
+RULES = ["accuracy", "auc", "neg_logloss", "bear_acc", "lagged_pnl", "combined"]
+# "combined" blends the other rules: each model's mean percentile rank across them that month.
+COMBINED_OF = [r for r in RULES if r != "combined"]
 # Reference lines, not rules a practitioner could run.
 REFERENCES = ["oracle", "never_switch", "always_long"]
 START = 100_000
@@ -86,6 +88,7 @@ def walk_forward(df: pd.DataFrame, zoo: dict, start_year: int, lag: int = 21,
 def apply_rules(scores: pd.DataFrame) -> pd.DataFrame:
     """Month x rule table of the picked model and its month return. Ties go to the first model in zoo order."""
     order = list(dict.fromkeys(scores["model"]))
+    scores = scores.assign(combined=combined(scores, COMBINED_OF, by="month"))
     out = []
     for rule in RULES + ["oracle"]:
         col = "month_ret" if rule == "oracle" else rule
@@ -162,8 +165,8 @@ def curse_by_k(monthly: pd.DataFrame) -> pd.DataFrame:
 
 
 def optimal_k(monthly: pd.DataFrame, window: int = 12) -> pd.DataFrame:
-    """Per month, the pool size k whose winner deployed best, plus the rolling std of log2(k) as its volatility."""
+    """Per month, the pool size k whose winner deployed best, plus the rolling std of k as its volatility."""
     best = monthly.loc[monthly.groupby("month")["deployed_acc"].idxmax(), ["month", "k", "deployed_acc"]]
     best = best.rename(columns={"k": "opt_k"}).sort_values("month").reset_index(drop=True)
-    best["opt_k_vol"] = np.log2(best["opt_k"]).rolling(window, min_periods=window).std()
+    best["opt_k_vol"] = best["opt_k"].rolling(window, min_periods=window).std()
     return best
