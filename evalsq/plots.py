@@ -370,3 +370,36 @@ def plot_h3_complementarity(forward: pd.DataFrame, pair: pd.DataFrame, path: Pat
     b.set_ylabel("starting eval (A)")
     b.set_title("$k gained by adding B to A", loc="left", fontsize=10)
     return _save(fig, path)
+
+
+def plot_learned_oos(oos: pd.DataFrame, path: Path) -> Path:
+    """Net $ per rule in each half of the deploy period, rows ordered by half 1, so a reordering in half 2 is the OOS story."""
+    from .deploy import START
+
+    w = oos.pivot(index="rule", columns="half", values="final_usd") / 1e3
+    w = w.sort_values(1, ascending=False, na_position="last")
+    labels = {**RULE_LABELS, "always_long": "Always long SPY", "learned": "Learned (ridge, fit before half 2)"}
+    colors = {**RULE_COLORS, "always_long": "#A89E96", "learned": "#FFB511"}
+    span = oos.groupby("half").agg(start=("start", "min"), end=("end", "max"))
+    fig, axes = plt.subplots(1, 2, figsize=(10, 3.9), sharey=True)
+    for ax, half in zip(axes, (1, 2)):
+        v = w[half]
+        ax.barh(range(len(v)), v.fillna(0), color=[colors.get(r, "#A89E96") for r in v.index])
+        for i, x in enumerate(v):
+            ax.text(x if not np.isnan(x) else 0, i, f" ${x:,.0f}k" if not np.isnan(x) else " not fit yet",
+                    va="center", fontsize=8, color=INK if not np.isnan(x) else "#5E554F")
+        rank = v.rank(ascending=False, method="min")
+        for i, (r, x) in enumerate(v.items()):
+            if not np.isnan(x):
+                ax.text(4, i, f"#{int(rank[r])}", va="center", fontsize=8, color=PAPER, fontweight="bold")
+        ax.axvline(START / 1e3, color=INK, lw=0.8, ls="--")
+        ax.set_xlim(0, w.max().max() * 1.22)
+        ax.set_xlabel(r"deployed \$k (net, \$100k start)")
+        s, e = span.loc[half]
+        ax.set_title(f"{s[:4]}-{e[:4]}: " + ("pick the winner here" if half == 1 else "then deploy it"), loc="left", fontsize=10)
+        ax.grid(axis="y", visible=False)
+    axes[0].set_yticks(range(len(w)), [labels.get(r, r) for r in w.index])
+    axes[0].invert_yaxis()
+    fig.text(0.99, 0.01, "ridge frozen on all months before the second half; single evals need no fitting",
+             ha="right", fontsize=8, color="#5E554F")
+    return _save(fig, path)

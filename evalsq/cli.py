@@ -9,7 +9,7 @@ from .data import download_bogle, load
 from . import plots
 from .heuristics import h1_rolling, h1_summary, h1_validity, h3_meta, h3_meta_monthly, yearly_holdout
 from .models import accuracy, fit_models, make_grid, make_zoo, train_test_split_by_year
-from .learned import learned_summary
+from .learned import learned_summary, oos_split
 from .deploy import BORROW, COST_BP, REFERENCES, RULES, START, apply_costs, apply_rules, curse_by_k, deploy_summary, equity, h2_selectors, h3_complementarity, h3_redundancy, optimal_k, walk_forward, winners_curse_monthly
 
 
@@ -119,6 +119,10 @@ def main(argv: list[str] | None = None) -> None:
     lsum.to_csv(out / "learned_summary.csv", index=False)
     lw.to_csv(out / "learned_weights.csv", index=False)
     lpicks.to_csv(out / "learned_picks.csv", index=False)
+    loos = oos_split(scores_all, cut, cost_bp=args.cost_bp, borrow=args.borrow)
+    print("  split-half OOS (net $):")
+    print(loos.pivot(index="rule", columns="half", values="final_usd").round(0).to_string())
+    loos.to_csv(out / "learned_oos.csv", index=False)
 
     wc = None
     if args.grid:
@@ -155,6 +159,7 @@ def main(argv: list[str] | None = None) -> None:
         plots.plot_picks(picks, RULES + ["oracle"], figs / "fig6_picks.png")
         if not lw.empty:
             plots.plot_learned_weights(lw, lsum, cut, figs / "fig10_learned_weights.png")
+            plots.plot_learned_oos(loos, figs / "fig10b_learned_oos.png")
         if wc is not None:
             plots.plot_winners_curse(wc, figs / "fig7_winners_curse.png")
             plots.plot_gap_dist(wcm, figs / "fig8_gap_dist.png")

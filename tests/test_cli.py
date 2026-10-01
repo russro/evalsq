@@ -20,12 +20,12 @@ def test_cli_end_to_end(tmp_path, featured_df):
           "--bogle", str(bogle)])
     for f in ["h1_validity", "h1_rolling", "h1_summary", "h3_yearly", "h3_meta", "h2_selectors", "h2_folds_1y", "h2_folds_2y",
               "h3_meta_monthly", "deploy_scores", "deploy_picks", "deploy_picks_gross", "deploy_summary", "deploy_cost_sweep", "grid_scores", "winners_curse", "winners_curse_monthly", "optimal_k",
-              "deploy_scores_all", "learned_summary", "learned_weights", "learned_picks"]:
+              "deploy_scores_all", "learned_summary", "learned_weights", "learned_picks", "learned_oos"]:
         assert not pd.read_csv(out / f"{f}.csv").empty
     pngs = sorted(p.name for p in figs.glob("*.png"))
     assert pngs == sorted(["fig1_setup.png", "fig2_h1_validity.png", "fig3_h2_folds.png", "fig3b_h2_regret.png", "fig4_h3_meta.png",
                     "fig5_deploy.png", "fig5b_deploy_bogle.png", "fig6_picks.png", "fig7_winners_curse.png",
-                    "fig8_gap_dist.png", "fig9_opt_k.png", "fig10_learned_weights.png",
+                    "fig8_gap_dist.png", "fig9_opt_k.png", "fig10_learned_weights.png", "fig10b_learned_oos.png",
                     "fig11_h3_redundancy.png", "fig11b_h3_complement.png"])
     assert all((figs / p).stat().st_size > 5000 for p in pngs)
 
