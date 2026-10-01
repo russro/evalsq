@@ -259,32 +259,32 @@ def plot_learned_weights(w: pd.DataFrame, summary: pd.DataFrame, cutoff: str, pa
 
 
 def plot_h2_folds(folds: dict, path: Path) -> Path:
-    """Rule x fold heatmap per block size: color = rank within the fold (dark = best), text = fold return."""
-    from matplotlib.colors import ListedColormap
+    """Rule x fold heatmap per block size: color = fold return (red < 0 < green), text = rank within the fold."""
+    from matplotlib.colors import TwoSlopeNorm
 
     widths = [len(f) for f in folds.values()]
     fig, axs = plt.subplots(1, len(folds) + 1, figsize=(5.5 + 1.1 * sum(widths), 3.6),
                             gridspec_kw={"width_ratios": widths + [0.15]})
     axes, cax = axs[:-1], axs[-1]
     n = next(iter(folds.values())).shape[1]
-    # Single-hue ramp so rank reads monotonically: near-black teal = 1st, fading to near-paper = last.
-    ramp = LinearSegmentedColormap.from_list("rank", ["#003A3E", "#00838A", "#9FD4C8", "#F0EEE4"])
-    cmap = ListedColormap([ramp(i / max(n - 1, 1)) for i in range(n)])
+    # Diverging, centered at 0 and symmetric so equal |return| reads as equal intensity; shared across panels.
+    cmap = LinearSegmentedColormap.from_list("ret", ["#A50F15", "#FB6A4A", "#FFFFFF", "#74C476", "#00592C"])
+    lim = max(np.abs(f.values).max() for f in folds.values())
+    norm = TwoSlopeNorm(vmin=-lim, vcenter=0, vmax=lim)
     for ax, (block, f) in zip(axes, folds.items()):
         rank = f.rank(axis=1, ascending=False, method="min").T
-        ax.imshow(rank.values, aspect="auto", cmap=cmap, vmin=0.5, vmax=n + 0.5, interpolation="nearest")
+        ax.imshow(f.T.values, aspect="auto", cmap=cmap, norm=norm, interpolation="nearest")
         for (i, j), v in np.ndenumerate(f.T.values):
-            ax.text(j, i, f"{v:+.0%}", ha="center", va="center", fontsize=8,
-                    color=PAPER if rank.values[i, j] <= n / 2 else INK, fontweight="bold" if rank.values[i, j] == 1 else None)
+            r = int(rank.values[i, j])
+            ax.text(j, i, f"#{r}", ha="center", va="center", fontsize=8,
+                    color=PAPER if abs(v) > 0.55 * lim else INK, fontweight="bold" if r == 1 else None)
         ax.set_xticks(range(len(f)), f.index)
         ax.set_yticks(range(n), [RULE_LABELS.get(r, r) for r in f.columns] if ax is axes[0] else [])
         ax.set_title(f"{block}-year folds", loc="left")
         ax.grid(False)
         ax.tick_params(length=0)
-    cb = fig.colorbar(plt.cm.ScalarMappable(cmap=cmap, norm=plt.Normalize(0.5, n + 0.5)), cax=cax,
-                      ticks=range(1, n + 1))
-    cb.ax.invert_yaxis()
-    cb.set_label("rank in fold (by return)", fontsize=8)
+    cb = fig.colorbar(plt.cm.ScalarMappable(cmap=cmap, norm=norm), cax=cax, format=lambda x, _: f"{x:+.0%}")
+    cb.set_label("fold return (net)", fontsize=8)
     cb.outline.set_visible(False)
     return _save(fig, path)
 
