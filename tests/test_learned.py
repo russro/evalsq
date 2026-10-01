@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from evalsq.learned import (MODES, SIGNALS, learned_picks, learned_select, learned_summary, lomo, meta_table,
+from evalsq.learned import (MODES, SIGNALS, learned_picks, learned_select, learned_summary, lomo, meta_table, oos_split,
                             rank_ic, train_months)
 
 MODELS = list("ABCDEFGH")
@@ -122,3 +122,13 @@ def test_learned_summary_beats_random_with_signal():
     assert list(summ["mode"]) == MODES
     assert (summ["lomo_ic"] > 0.3).all()
     assert set(w["mode"]) == set(MODES) and pk["month"].min() == "2015-01"
+
+
+def test_oos_split_halves_and_no_learned_in_half_one():
+    s = _scores(n_months=72, signal="bear_acc")
+    o = oos_split(s, "2014-01")
+    h1, h2 = o[o["half"] == 1], o[o["half"] == 2]
+    assert h1["end"].max() < h2["start"].min() == "2016-01"
+    assert "learned" not in set(h1["rule"]) and "learned" in set(h2["rule"])
+    assert {"bear_acc", "always_long"} <= set(h1["rule"]) & set(h2["rule"])
+    assert (o["final_usd"] > 0).all()

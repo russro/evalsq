@@ -163,3 +163,28 @@ def learned_summary(scores: pd.DataFrame, cutoff: str, n_train: int = 36, alpha:
         ws.append(w.assign(mode=mode))
         pks.append(pk)
     return pd.DataFrame(rows), pd.concat(ws, ignore_index=True), pd.concat(pks, ignore_index=True)
+
+
+def oos_split(scores: pd.DataFrame, cutoff: str, alpha: float = 10.0, cost_bp: float = 1.0,
+              borrow: float = 0.005) -> pd.DataFrame:
+    """Split the deploy period in half. Each rule's net $ per half ($START fresh each half), plus a ridge
+    frozen on everything before the second half (static mode), deployed on the second half only.
+
+    Returns rule, half (1 or 2), final_usd. Picking the best rule on half 1 and reading half 2 is the OOS test.
+    """
+    from .deploy import RULES, START, apply_costs, apply_rules
+
+    months = sorted(m for m in scores["month"].unique() if m >= cutoff)
+    mid = months[len(months) // 2]
+    all_months = sorted(scores["month"].unique())
+    preds, _ = learned_select(scores, "static", all_months.index(mid) - GAP + 1, alpha)
+    pk = pd.concat([apply_rules(scores), learned_picks(scores, preds, "learned")], ignore_index=True)
+    pk = pk[pk["rule"].isin(RULES + ["always_long", "learned"])]
+    rows = []
+    for half, sel in ((1, (pk["month"] >= cutoff) & (pk["month"] < mid)), (2, pk["month"] >= mid)):
+        p = pk[sel & ~((half == 1) & (pk["rule"] == "learned"))]
+        p = apply_costs(p, scores, cost_bp, borrow)
+        for rule, g in p.groupby("rule", sort=False):
+            rows.append({"rule": rule, "half": half, "start": g["month"].min(), "end": g["month"].max(),
+                         "final_usd": float(START * (1 + g["month_ret"]).prod())})
+    return pd.DataFrame(rows)
