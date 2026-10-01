@@ -3,11 +3,11 @@
 import argparse
 from pathlib import Path
 
-from .data import load
+from .data import download_bogle, load
 from . import plots
-from .heuristics import h1_rolling, h1_summary, h1_validity, h2_rank_flips, h2_temporal, h3_meta
+from .heuristics import h1_rolling, h1_summary, h1_validity, h2_rank_flips, h2_temporal, h3_meta, h3_meta_monthly
 from .models import accuracy, fit_models, make_grid, make_zoo, train_test_split_by_year
-from .deploy import RULES, apply_rules, curse_by_k, deploy_summary, equity, optimal_k, walk_forward, winners_curse_monthly
+from .deploy import RULES, START, apply_rules, curse_by_k, deploy_summary, equity, optimal_k, walk_forward, winners_curse_monthly
 
 
 def _section(title: str) -> None:
@@ -24,6 +24,8 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--sel-window", type=int, default=63, help="selection window in trading days (default: 63)")
     p.add_argument("--grid", type=int, default=0, help="also run an N-config GBM grid for the winner's-curse backup (off by default; 25 is plenty, ~1 min)")
     p.add_argument("--jobs", type=int, default=-1, help="parallel workers for the walk-forward (default: all cores, 1 = serial)")
+    p.add_argument("--bogle", default="bogle_3fund.csv", help="cached VTI/VXUS/BND CSV for the Bogleheads line (auto-downloaded if missing)")
+    p.add_argument("--no-bogle", action="store_true", help="skip the Bogleheads line (fig5b)")
     p.add_argument("--no-plots", action="store_true", help="skip figures")
     args = p.parse_args(argv)
 
@@ -59,6 +61,9 @@ def main(argv: list[str] | None = None) -> None:
     print(meta.round(4).to_string(index=False))
     print(f"\n  Meta-model LOO R² = {r2:.3f}  (high → score tracks regime, not model)")
     meta.to_csv(out / "h3_meta.csv", index=False)
+    meta_m, r2_m = h3_meta_monthly(df, list(h2["test_year"]))
+    print(f"  Monthly version: LOO R² = {r2_m:.3f} over {len(meta_m)} months")
+    meta_m.to_csv(out / "h3_meta_monthly.csv", index=False)
 
     _section(f"H1b: Monthly deployment, lag {args.lag} days (money per selection rule)")
     scores = walk_forward(df, make_zoo(), args.cutoff, lag=args.lag, sel_window=args.sel_window, n_jobs=args.jobs)
@@ -91,8 +96,13 @@ def main(argv: list[str] | None = None) -> None:
         plots.plot_setup(df, args.cutoff, figs / "fig1_setup.png")
         plots.plot_h1(summary, roll, figs / "fig2_h1_validity.png")
         plots.plot_h2(h2, figs / "fig3_h2_holdout.png")
-        plots.plot_h3(meta, r2, figs / "fig4_h3_meta.png")
-        plots.plot_deploy(equity(picks), RULES, figs / "fig5_deploy.png")
+        plots.plot_h3(meta, r2, meta_m, r2_m, figs / "fig4_h3_meta.png")
+        eq = equity(picks)
+        plots.plot_deploy(eq, RULES, figs / "fig5_deploy.png")
+        if not args.no_bogle:
+            bogle = download_bogle(args.bogle).reindex(eq.index).fillna(0)
+            eq["bogle"] = START * (1 + bogle).cumprod()
+            plots.plot_deploy(eq, RULES, figs / "fig5b_deploy_bogle.png")
         plots.plot_picks(picks, RULES + ["oracle"], figs / "fig6_picks.png")
         if wc is not None:
             plots.plot_winners_curse(wc, figs / "fig7_winners_curse.png")

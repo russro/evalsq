@@ -47,6 +47,25 @@ def build_features(raw: pd.DataFrame) -> pd.DataFrame:
     return df.dropna()
 
 
+# Bogleheads three-fund portfolio: US total market, international, bonds. Rebalanced monthly.
+BOGLE = {"VTI": 0.6, "VXUS": 0.2, "BND": 0.2}
+
+
+def download_bogle(cache_path: Path | str = "bogle_3fund.csv") -> pd.Series:
+    """Monthly returns of the three-fund portfolio, indexed by 'YYYY-MM'; download + cache on first call."""
+    cache_path = Path(cache_path)
+    if not cache_path.exists():
+        import yfinance as yf
+        print("Downloading VTI/VXUS/BND (Bogleheads three-fund)...")
+        raw = yf.download(list(BOGLE), start="2010-01-01", end="2026-01-01", auto_adjust=True, progress=False)["Close"]
+        raw.to_csv(cache_path, index_label="date")
+    closes = pd.read_csv(cache_path, index_col=0, parse_dates=True)[list(BOGLE)]
+    monthly = closes.resample("ME").last().pct_change().dropna()
+    ret = (monthly * pd.Series(BOGLE)).sum(axis=1)
+    ret.index = ret.index.to_period("M").astype(str)
+    return ret.rename("bogle")
+
+
 def load(cache_path: Path | str = "spy_daily.csv") -> pd.DataFrame:
     """Download (or load cache) and return feature-engineered DataFrame."""
     return build_features(download_spy(cache_path))
