@@ -263,7 +263,7 @@ def plot_h2_folds(folds: dict, path: Path) -> Path:
     from matplotlib.colors import TwoSlopeNorm
 
     widths = [len(f) for f in folds.values()]
-    fig, axs = plt.subplots(1, len(folds) + 1, figsize=(5.5 + 1.1 * sum(widths), 3.6),
+    fig, axs = plt.subplots(1, len(folds) + 1, figsize=(2.6 + 0.62 * sum(widths), 3.8),
                             gridspec_kw={"width_ratios": widths + [0.15]})
     axes, cax = axs[:-1], axs[-1]
     n = next(iter(folds.values())).shape[1]
@@ -276,9 +276,9 @@ def plot_h2_folds(folds: dict, path: Path) -> Path:
         ax.imshow(f.T.values, aspect="auto", cmap=cmap, norm=norm, interpolation="nearest")
         for (i, j), v in np.ndenumerate(f.T.values):
             r = int(rank.values[i, j])
-            ax.text(j, i, f"#{r}", ha="center", va="center", fontsize=8,
+            ax.text(j, i, f"#{r}", ha="center", va="center", fontsize=13,
                     color=PAPER if abs(v) > 0.55 * lim else INK, fontweight="bold" if r == 1 else None)
-        ax.set_xticks(range(len(f)), f.index)
+        ax.set_xticks(range(len(f)), f.index, fontsize=8)
         ax.set_yticks(range(n), [RULE_LABELS.get(r, r) for r in f.columns] if ax is axes[0] else [])
         ax.set_title(f"{block}-year folds", loc="left")
         ax.grid(False)
