@@ -185,3 +185,9 @@ def test_costs_never_help(featured_df):
     net = apply_costs(gross, s)
     assert (net["month_ret"] <= gross["month_ret"] + 1e-12).all()
     assert (s["flips"] >= 0).all() and set(s["first_pos"]) <= {-1, 1}
+
+
+def test_walk_forward_skips_months_without_enough_history(featured_df):
+    s = walk_forward(featured_df, SMALL_ZOO, featured_df.index[0].year, n_jobs=1)
+    first = pd.Period(s["month"].min(), "M").to_timestamp()
+    assert (featured_df.index < first).sum() >= 500 + 63 + 21

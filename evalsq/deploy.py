@@ -48,9 +48,9 @@ def _score_month(df: pd.DataFrame, zoo: dict, pos0: int, pos1: int, lag: int,
                  sel_window: int, min_train: int) -> list[dict]:
     """Retrain every model on data visible at pos0, score on the selection window, book the live month."""
     end = visible_end(pos0, lag)
-    train, sel, live = df.iloc[:end - sel_window], df.iloc[end - sel_window:end], df.iloc[pos0:pos1]
-    if len(train) < min_train:
+    if end - sel_window < min_train:  # also guards negative slices for months right after the data starts
         return []
+    train, sel, live = df.iloc[:end - sel_window], df.iloc[end - sel_window:end], df.iloc[pos0:pos1]
     month = str(df.index[pos0].to_period("M"))
     spy = float(np.prod(1 + live["next_ret"].values) - 1)
     rows = []
