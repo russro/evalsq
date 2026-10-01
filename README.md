@@ -34,11 +34,15 @@ SPY daily close. Models are trained on 2010 to 2017 and scored from 2018 onward.
 
 Correlation between each candidate metric and the strategy's Sharpe ratio, computed per month. (a) Over the whole test period, accuracy has the highest correlation (0.82) and AUC the lowest (0.35). (b) The same correlation over a 24-month rolling window, averaged over the two models. Accuracy stays between 0.62 and 0.92 for both models, while AUC for the logistic regression drops to -0.55 in 2023, which means that months with a higher AUC tended to have a lower return during that window. Accuracy on downtrend days has gaps because it needs at least 3 days below the 50-day average in a month, and only 44 of the 96 test months have that, mostly outside the 2018 to 2022 bull run. The combined score (mean percentile rank over the five metrics) correlates at 0.75 overall, below accuracy alone.
 
-### H2. Temporal holdout
+### H2. Selector stability
 
-![h2](figures/fig3_h2_holdout.png)
+![h2](figures/fig3_h2_folds.png)
 
-Accuracy of each model when trained on every year before the test year and scored on that year alone. The better model changes three times (2017, 2022 and 2023). The random forest only wins in 2015, 2016 and 2022. A single split at 2018 ranks the logistic regression first (0.56 against 0.52), which hides that the random forest is the better model during the 2022 bear market.
+Does the best eval stay the best? The monthly net returns of each selection rule (from the H1b walk-forward) are compounded within blocked time folds of one and two calendar years, and the rules are ranked within each fold. Accuracy on downtrend days is best in 5 of 8 years and 2 of 4 two-year blocks, but the previous fold's best rule is best again in only 2 of 7 one-year transitions (29%, chance 17%) and 1 of 3 two-year transitions.
+
+![h2b](figures/fig3b_h2_regret.png)
+
+Regret is the return lost per fold against the best rule in hindsight, averaged over folds 2 onward. Following the previous fold's winner costs 7.2 points a year, less than a random rule (10.9) but more than always using accuracy on downtrend days (3.1), though choosing that fixed rule is itself a hindsight decision. With 4 to 8 folds this is a stability check, not a significance test.
 
 ### H3. Predictability of the score
 
@@ -72,7 +76,7 @@ The pool size whose winner deployed best, month by month, with its 12-month mean
 
 - `evalsq/data.py` downloads SPY and builds the features (returns, moving average ratios, volatility) and the next-day target.
 - `evalsq/models.py` defines the two models. New models go in `make_models()`.
-- `evalsq/heuristics.py` implements H1, H2 and H3.
+- `evalsq/heuristics.py` implements H1 and H3; `evalsq/deploy.py` implements the monthly walk-forward and H2 (`h2_selectors`).
 - `evalsq/deploy.py` runs the monthly walk-forward, the selection rules and the winner's curse (`winners_curse_monthly`, `optimal_k`).
 - `evalsq/learned.py` is the learned benchmark: ridge meta-model, retraining modes, leave-one-model-out check.
 - `evalsq/plots.py` draws the figures above.
