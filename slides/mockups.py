@@ -8,8 +8,11 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 from matplotlib.patches import FancyArrowPatch, FancyBboxPatch  # noqa: E402
 
+from evalsq.plots import INK  # noqa: E402,F401  (import applies the riso palette, paper and font rcParams)
+
 OUT = Path(__file__).parent
-BLUE, ORANGE, GREEN, GREY, RED = "#0072B2", "#E69F00", "#009E73", "#999999", "#D55E00"
+# Same risograph inks as evalsq/plots.py.
+BLUE, ORANGE, GREEN, GREY, RED = "#00838A", "#FF6C2F", "#3D9A3F", "#5E554F", "#FF48B0"
 
 
 def canvas(w=10, h=3.2):
@@ -26,7 +29,7 @@ def box(ax, x, y, text, w=1.8, h=0.8, color=BLUE, fs=11, dashed=False):
     ax.text(x, y, text, ha="center", va="center", fontsize=fs)
 
 
-def arrow(ax, a, b, color="black", rad=0.0, ls="-", text=None, toff=(0, 0.2)):
+def arrow(ax, a, b, color=INK, rad=0.0, ls="-", text=None, toff=(0, 0.2)):
     ax.add_patch(FancyArrowPatch(a, b, arrowstyle="-|>", mutation_scale=14, color=color, lw=1.4,
                                  ls=ls, connectionstyle=f"arc3,rad={rad}"))
     if text:
@@ -58,7 +61,7 @@ def pipeline():
 def timeline():
     """Slide 5: one month of the worked example. Decide at t on data up to t-L, trade, see P&L L days later."""
     fig, ax = canvas(10, 2.6)
-    ax.plot([0.5, 9.5], [1.3, 1.3], color="black", lw=1.2)
+    ax.plot([0.5, 9.5], [1.3, 1.3], color=INK, lw=1.2)
     ax.add_patch(FancyBboxPatch((0.6, 1.15), 2.8, 0.3, boxstyle="square,pad=0", fc=BLUE + "33", ec="none"))
     ax.text(2.0, 1.6, "labels we can see", ha="center", fontsize=9, color=BLUE)
     ax.add_patch(FancyBboxPatch((3.4, 1.15), 1.4, 0.3, boxstyle="square,pad=0", fc=GREY + "33", ec="none"))
@@ -66,7 +69,7 @@ def timeline():
     ax.add_patch(FancyBboxPatch((4.8, 1.15), 3.0, 0.3, boxstyle="square,pad=0", fc=ORANGE + "33", ec="none"))
     ax.text(6.3, 1.6, "month t: deployed model trades", ha="center", fontsize=9, color=ORANGE)
     for x, t in [(3.4, "t-L\n"), (4.8, "t\nretrain + pick"), (7.8, "t+1\nnext pick"), (9.2, "t+1+L\nmonth t P&L seen")]:
-        ax.plot([x, x], [1.1, 1.5], color="black", lw=1)
+        ax.plot([x, x], [1.1, 1.5], color=INK, lw=1)
         ax.text(x, 0.55, t, ha="center", fontsize=9)
     save(fig, "mock_timeline.png")
 
@@ -94,7 +97,7 @@ def heuristics_map():
     for i, (h, q, c) in enumerate(items):
         x = 1.7 + i * 3.3
         box(ax, x, 1.6, h, w=2.9, h=0.7, color=c, fs=11)
-        ax.text(x, 0.85, q, ha="center", fontsize=9, color="#333333")
+        ax.text(x, 0.85, q, ha="center", fontsize=9, color=INK)
     arrow(ax, (0.3, 0.3), (9.7, 0.3), color=GREY)
     ax.text(0.3, 0.05, "familiar", fontsize=8, color=GREY)
     ax.text(9.7, 0.05, "less common", fontsize=8, color=GREY, ha="right")
