@@ -11,12 +11,13 @@ from matplotlib.patches import FancyArrowPatch, FancyBboxPatch  # noqa: E402
 from evalsq.plots import INK  # noqa: E402,F401  (import applies the riso palette, paper and font rcParams)
 
 OUT = Path(__file__).parent
-# Same risograph inks as evalsq/plots.py.
-BLUE, ORANGE, GREEN, GREY, RED = "#00838A", "#FF6C2F", "#3D9A3F", "#5E554F", "#FF48B0"
+# Plain draw.io flowchart look: (fill, edge) pairs. Default box, highlighted box, outcome box.
+BLUE, ORANGE, GREEN, RED = ("#DAE8FC", "#6C8EBF"), ("#FFF2CC", "#D6B656"), ("#D5E8D4", "#82B366"), ("#FFF2CC", "#D6B656")
+GREY = "#666666"
 
 
 def canvas(w=10, h=3.2):
-    fig, ax = plt.subplots(figsize=(w, h))
+    fig, ax = plt.subplots(figsize=(w, h), facecolor="white")
     ax.set_xlim(0, w)
     ax.set_ylim(0, h)
     ax.axis("off")
@@ -24,9 +25,10 @@ def canvas(w=10, h=3.2):
 
 
 def box(ax, x, y, text, w=1.8, h=0.8, color=BLUE, fs=11, dashed=False):
-    ax.add_patch(FancyBboxPatch((x - w / 2, y - h / 2), w, h, boxstyle="round,pad=0.05",
-                                fc=color + "22", ec=color, lw=1.5, ls="--" if dashed else "-"))
-    ax.text(x, y, text, ha="center", va="center", fontsize=fs)
+    fc, ec = color
+    ax.add_patch(FancyBboxPatch((x - w / 2, y - h / 2), w, h, boxstyle="round,pad=0.02",
+                                fc=fc, ec=ec, lw=1.2, ls="--" if dashed else "-"))
+    ax.text(x, y, text, ha="center", va="center", fontsize=fs, color=INK)
 
 
 def arrow(ax, a, b, color=INK, rad=0.0, ls="-", text=None, toff=(0, 0.2)):
@@ -37,7 +39,7 @@ def arrow(ax, a, b, color=INK, rad=0.0, ls="-", text=None, toff=(0, 0.2)):
 
 
 def save(fig, name):
-    fig.savefig(OUT / name, dpi=150, bbox_inches="tight")
+    fig.savefig(OUT / name, dpi=150, bbox_inches="tight", facecolor="white")
     plt.close(fig)
 
 
@@ -51,9 +53,9 @@ def pipeline():
         arrow(ax, (a + 0.95, 2.2), (b - 0.95, 2.2))
     box(ax, 9.3, 2.2, "$", w=0.8, color=GREEN, fs=14)
     arrow(ax, (8.7, 2.2), (8.85, 2.2))
-    ax.text(5.5, 2.85, "?", ha="center", fontsize=22, color=RED, weight="bold")
-    arrow(ax, (9.3, 1.75), (5.5, 1.75), color=GREEN, rad=-0.35, ls="--")
-    ax.text(7.4, 0.7, "real outcome: arrives L days late", ha="center", fontsize=10, color=GREEN)
+    ax.text(5.5, 2.85, "?", ha="center", fontsize=22, color=INK, weight="bold")
+    arrow(ax, (9.3, 1.75), (5.5, 1.75), color=GREY, rad=-0.35, ls="--")
+    ax.text(7.4, 0.7, "real outcome: arrives L days late", ha="center", fontsize=10, color=GREY)
     ax.text(5.5, 0.2, "we decide on the bench because the money is not in yet", ha="center", fontsize=9, color=GREY)
     save(fig, "mock_pipeline.png")
 
@@ -62,12 +64,12 @@ def timeline():
     """Slide 5: one month of the worked example. Decide at t on data up to t-L, trade, see P&L L days later."""
     fig, ax = canvas(10, 2.6)
     ax.plot([0.5, 9.5], [1.3, 1.3], color=INK, lw=1.2)
-    ax.add_patch(FancyBboxPatch((0.6, 1.15), 2.8, 0.3, boxstyle="square,pad=0", fc=BLUE + "33", ec="none"))
-    ax.text(2.0, 1.6, "labels we can see", ha="center", fontsize=9, color=BLUE)
-    ax.add_patch(FancyBboxPatch((3.4, 1.15), 1.4, 0.3, boxstyle="square,pad=0", fc=GREY + "33", ec="none"))
+    ax.add_patch(FancyBboxPatch((0.6, 1.15), 2.8, 0.3, boxstyle="square,pad=0", fc=BLUE[0], ec=BLUE[1]))
+    ax.text(2.0, 1.6, "labels we can see", ha="center", fontsize=9, color=INK)
+    ax.add_patch(FancyBboxPatch((3.4, 1.15), 1.4, 0.3, boxstyle="square,pad=0", fc="#F5F5F5", ec=GREY))
     ax.text(4.1, 1.6, "L days: not in yet", ha="center", fontsize=9, color=GREY)
-    ax.add_patch(FancyBboxPatch((4.8, 1.15), 3.0, 0.3, boxstyle="square,pad=0", fc=ORANGE + "33", ec="none"))
-    ax.text(6.3, 1.6, "month t: deployed model trades", ha="center", fontsize=9, color=ORANGE)
+    ax.add_patch(FancyBboxPatch((4.8, 1.15), 3.0, 0.3, boxstyle="square,pad=0", fc=ORANGE[0], ec=ORANGE[1]))
+    ax.text(6.3, 1.6, "month t: deployed model trades", ha="center", fontsize=9, color=INK)
     for x, t in [(3.4, "t-L\n"), (4.8, "t\nretrain + pick"), (7.8, "t+1\nnext pick"), (9.2, "t+1+L\nmonth t P&L seen")]:
         ax.plot([x, x], [1.1, 1.5], color=INK, lw=1)
         ax.text(x, 0.55, t, ha="center", fontsize=9)
@@ -83,17 +85,17 @@ def bench_of_bench():
     box(ax, 4.9, 1.9, "pick model\neach month", w=1.9, h=0.9, color=ORANGE, fs=10)
     arrow(ax, (5.9, 1.9), (7.0, 1.9))
     box(ax, 7.9, 1.9, "$ after\n8 years", w=1.6, h=0.9, color=GREEN, fs=10)
-    arrow(ax, (7.9, 1.4), (1.3, 0.55), color=RED, rad=-0.25, ls="--")
-    ax.text(7.9, 2.9, "grade the metric, not the model", ha="center", fontsize=10, color=RED)
+    arrow(ax, (7.9, 1.4), (1.3, 0.55), color=GREY, rad=-0.25, ls="--")
+    ax.text(7.9, 2.9, "grade the metric, not the model", ha="center", fontsize=10, color=INK)
     save(fig, "mock_bench_of_bench.png")
 
 
 def heuristics_map():
     """Slide 7: the three checks, ordered familiar -> unusual, each tied to what it asks."""
     fig, ax = canvas(10, 2.6)
-    items = [("H1  Validity", "does the score track $?", GREEN),
+    items = [("H1  Validity", "does the score track $?", BLUE),
              ("H2  Temporal holdout", "does the ranking survive time?", BLUE),
-             ("H3  Meta-model", "is the score just the regime?", RED)]
+             ("H3  Meta-model", "is the score just the regime?", BLUE)]
     for i, (h, q, c) in enumerate(items):
         x = 1.7 + i * 3.3
         box(ax, x, 1.6, h, w=2.9, h=0.7, color=c, fs=11)
