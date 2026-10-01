@@ -9,6 +9,7 @@ from .data import download_bogle, load
 from . import plots
 from .heuristics import h1_rolling, h1_summary, h1_validity, h2_rank_flips, h2_temporal, h3_meta, h3_meta_monthly
 from .models import accuracy, fit_models, make_grid, make_zoo, train_test_split_by_year
+from .learned import learned_summary
 from .deploy import BORROW, COST_BP, REFERENCES, RULES, START, apply_costs, apply_rules, curse_by_k, deploy_summary, equity, optimal_k, walk_forward, winners_curse_monthly
 
 
@@ -30,6 +31,7 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--borrow", type=float, default=BORROW, help=f"annual borrow rate while short (default: {BORROW})")
     p.add_argument("--bogle", default="bogle_3fund.csv", help="cached VTI/VXUS/BND CSV for the Bogleheads line (auto-downloaded if missing)")
     p.add_argument("--no-bogle", action="store_true", help="skip the Bogleheads line (fig5b)")
+    p.add_argument("--meta-start", type=int, default=2012, help="first year of walk-forward months; months before --cutoff only train the learned benchmark (default: 2012)")
     p.add_argument("--no-plots", action="store_true", help="skip figures")
     args = p.parse_args(argv)
 
@@ -70,7 +72,11 @@ def main(argv: list[str] | None = None) -> None:
     meta_m.to_csv(out / "h3_meta_monthly.csv", index=False)
 
     _section(f"H1b: Monthly deployment, lag {args.lag} days (money per selection rule)")
-    scores = walk_forward(df, make_zoo(), args.cutoff, lag=args.lag, sel_window=args.sel_window, n_jobs=args.jobs)
+    # months before the cutoff are identical to a cutoff-start run; they only feed the learned benchmark
+    scores_all = walk_forward(df, make_zoo(), min(args.meta_start, args.cutoff), lag=args.lag,
+                              sel_window=args.sel_window, n_jobs=args.jobs)
+    cut = f"{args.cutoff}-01"
+    scores = scores_all[scores_all["month"] >= cut].reset_index(drop=True)
     gross = apply_rules(scores)
     picks = apply_costs(gross, scores, args.cost_bp, args.borrow)
     dep = deploy_summary(picks)
@@ -87,6 +93,14 @@ def main(argv: list[str] | None = None) -> None:
     picks.to_csv(out / "deploy_picks.csv", index=False)
     dep.to_csv(out / "deploy_summary.csv", index=False)
     sweep.to_csv(out / "deploy_cost_sweep.csv", index=False)
+
+    _section(f"Learned benchmark: ridge on bench signals, trained on {scores_all['month'].iloc[0]} on")
+    lsum, lw, lpicks = learned_summary(scores_all, cut, cost_bp=args.cost_bp, borrow=args.borrow)
+    print(lsum.round(3).to_string(index=False))
+    scores_all.to_csv(out / "deploy_scores_all.csv", index=False)
+    lsum.to_csv(out / "learned_summary.csv", index=False)
+    lw.to_csv(out / "learned_weights.csv", index=False)
+    lpicks.to_csv(out / "learned_picks.csv", index=False)
 
     wc = None
     if args.grid:
@@ -118,6 +132,8 @@ def main(argv: list[str] | None = None) -> None:
             eq["bogle"] = START * (1 + bogle).cumprod()
             plots.plot_deploy(eq, RULES, figs / "fig5b_deploy_bogle.png")
         plots.plot_picks(picks, RULES + ["oracle"], figs / "fig6_picks.png")
+        if not lw.empty:
+            plots.plot_learned_weights(lw, lsum, cut, figs / "fig10_learned_weights.png")
         if wc is not None:
             plots.plot_winners_curse(wc, figs / "fig7_winners_curse.png")
             plots.plot_gap_dist(wcm, figs / "fig8_gap_dist.png")

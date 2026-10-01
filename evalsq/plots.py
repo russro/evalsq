@@ -8,6 +8,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 from matplotlib import font_manager  # noqa: E402
 from matplotlib.colors import LinearSegmentedColormap  # noqa: E402
+import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 
 from .heuristics import METRICS  # noqa: E402
@@ -249,4 +250,28 @@ def plot_opt_k(opt: pd.DataFrame, path: Path) -> Path:
     for ax in (a, b):
         for a_, b_ in SHADE.values():
             ax.axvspan(pd.Timestamp(a_), pd.Timestamp(b_), color="#FF48B0", alpha=0.1, lw=0)
+    return _save(fig, path)
+
+
+# ── Learned benchmark (learned.py) ───────────────────────────────────────────
+
+MODE_TITLES = {"expanding": "Refit monthly, all history", "rolling": "Refit monthly, last N months",
+               "static": "Fit once on first N months, frozen"}
+
+
+def plot_learned_weights(w: pd.DataFrame, summary: pd.DataFrame, cutoff: str, path: Path) -> Path:
+    """Ridge weight on each bench signal over time, one panel per retraining mode. Shaded = deployed period."""
+    modes = list(dict.fromkeys(w["mode"]))
+    fig, axes = plt.subplots(len(modes), 1, figsize=(8, 2.3 * len(modes)), sharex=True, sharey=True)
+    usd = summary.set_index("mode")["final_usd"]
+    for ax, mode in zip(np.atleast_1d(axes), modes):
+        wide = w[w["mode"] == mode].pivot(index="month", columns="feature", values="weight")
+        x = _period_ts(wide.index)
+        for c in wide.columns:
+            ax.plot(x, wide[c], color=RULE_COLORS.get(c, "#A89E96"), lw=1.6, label=RULE_LABELS.get(c, c))
+        ax.axhline(0, color=INK, lw=0.6)
+        ax.axvspan(pd.Timestamp(f"{cutoff}-01"), x.max(), color="#FFB511", alpha=0.08, lw=0)
+        ax.set_title(f"{MODE_TITLES.get(mode, mode)}  (deployed ${usd[mode] / 1e3:,.0f}k)", loc="left", fontsize=10)
+    np.atleast_1d(axes)[0].legend(fontsize=8, frameon=False, loc="upper left", bbox_to_anchor=(1.01, 1))
+    fig.supylabel("ridge weight")
     return _save(fig, path)
