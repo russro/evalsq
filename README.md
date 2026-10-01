@@ -50,6 +50,14 @@ A linear model that predicts the random forest's accuracy from the mean volatili
 
 `fig5_deploy.png` shows portfolio value under each selection rule, including `combined` (the model with the best mean rank over the other five rules that month). `fig5b_deploy_bogle.png` adds a Bogleheads three-fund portfolio (60% VTI, 20% VXUS, 20% BND, rebalanced monthly; `--no-bogle` skips it). The combined rule ends at $177k, below accuracy alone ($222k). The three-fund portfolio ends at $215k, under always-long SPY ($287k) because of the bond and international share.
 
+### Learned benchmark
+
+![learned](figures/fig10_learned_weights.png)
+
+Instead of picking a metric by hand, a ridge regression learns which bench signals predict a model's next-month return (`evalsq/learned.py`). Inputs are the six signals, demeaned across the zoo each month; the target is the model's return minus the zoo average, so the month effect drops out. No model identity goes in. It trains on walk-forward months from 2012-08 (`--meta-start`, these months do not change any other result) and deploys from 2018, with a two-month gap so it only sees returns that are already visible. Three modes: refit monthly on all history, refit monthly on the last 36 months, or fit once on the first 36 months and freeze.
+
+Net of costs it ends at $177k (all history), $191k (rolling) and $149k (frozen), all below accuracy alone ($209k), bear-day accuracy ($320k) and never switching ($344k). Its monthly rank correlation with realised returns is about zero (leave-one-model-out 0.04, t = 0.9). The all-history fit settles on accuracy minus uptrend accuracy, close to bear-day accuracy. The frozen fit leans on lagged P&L, a weight the rolling fit turns negative after 2023, so drift breaks the static version.
+
 ### Backup: winner's curse spread and best pool size
 
 ![gap](figures/fig8_gap_dist.png)
@@ -66,6 +74,7 @@ The pool size whose winner deployed best, month by month, with its 12-month mean
 - `evalsq/models.py` defines the two models. New models go in `make_models()`.
 - `evalsq/heuristics.py` implements H1, H2 and H3.
 - `evalsq/deploy.py` runs the monthly walk-forward, the selection rules and the winner's curse (`winners_curse_monthly`, `optimal_k`).
+- `evalsq/learned.py` is the learned benchmark: ridge meta-model, retraining modes, leave-one-model-out check.
 - `evalsq/plots.py` draws the figures above.
 - `evalsq/cli.py` is the entry point.
 - `slides/outline.md` is the first-pass slide outline. `slides/mockups.py` draws the diagram mockups (`slides/mock_*.png`) to redraw in draw.io.
