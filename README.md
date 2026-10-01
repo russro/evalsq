@@ -18,6 +18,8 @@ The default run takes about 15 seconds on 8 cores. `uv run evalsq --grid 25` add
 
 The monthly deployment only sees money that is already confirmed. Labels show up `--lag` trading days late (default 21), so both retraining and model selection at month start t use rows up to t−L.
 
+Deployment $ are net of costs: `--cost-bp` per unit of position traded (default 1bp; a long/short flip is 2 units, including flips at model swaps and the first entry from cash) and `--borrow` per year while short (default 0.5%). `deploy_summary.csv` keeps the gross $ next to net, and `deploy_cost_sweep.csv` shows final $ at 0/1/2/5/10bp.
+
 ## Figures
 
 ### Setup

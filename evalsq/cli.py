@@ -3,11 +3,13 @@
 import argparse
 from pathlib import Path
 
+import pandas as pd
+
 from .data import download_bogle, load
 from . import plots
 from .heuristics import h1_rolling, h1_summary, h1_validity, h2_rank_flips, h2_temporal, h3_meta, h3_meta_monthly
 from .models import accuracy, fit_models, make_grid, make_zoo, train_test_split_by_year
-from .deploy import RULES, START, apply_rules, curse_by_k, deploy_summary, equity, optimal_k, walk_forward, winners_curse_monthly
+from .deploy import BORROW, COST_BP, REFERENCES, RULES, START, apply_costs, apply_rules, curse_by_k, deploy_summary, equity, optimal_k, walk_forward, winners_curse_monthly
 
 
 def _section(title: str) -> None:
@@ -24,6 +26,8 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--sel-window", type=int, default=63, help="selection window in trading days (default: 63)")
     p.add_argument("--grid", type=int, default=0, help="also run an N-config GBM grid for the winner's-curse backup (off by default; 25 is plenty, ~1 min)")
     p.add_argument("--jobs", type=int, default=-1, help="parallel workers for the walk-forward (default: all cores, 1 = serial)")
+    p.add_argument("--cost-bp", type=float, default=COST_BP, help=f"trading cost in bp per unit of position traded (default: {COST_BP})")
+    p.add_argument("--borrow", type=float, default=BORROW, help=f"annual borrow rate while short (default: {BORROW})")
     p.add_argument("--bogle", default="bogle_3fund.csv", help="cached VTI/VXUS/BND CSV for the Bogleheads line (auto-downloaded if missing)")
     p.add_argument("--no-bogle", action="store_true", help="skip the Bogleheads line (fig5b)")
     p.add_argument("--no-plots", action="store_true", help="skip figures")
@@ -67,12 +71,22 @@ def main(argv: list[str] | None = None) -> None:
 
     _section(f"H1b: Monthly deployment, lag {args.lag} days (money per selection rule)")
     scores = walk_forward(df, make_zoo(), args.cutoff, lag=args.lag, sel_window=args.sel_window, n_jobs=args.jobs)
-    picks = apply_rules(scores)
+    gross = apply_rules(scores)
+    picks = apply_costs(gross, scores, args.cost_bp, args.borrow)
     dep = deploy_summary(picks)
+    dep.insert(2, "gross_usd", deploy_summary(gross)["final_usd"])
+    print(f"  net of {args.cost_bp}bp per unit traded + {args.borrow:.2%}/yr borrow")
     print(dep.round(3).to_string(index=False))
+    sweep = pd.DataFrame({f"{bp}bp": deploy_summary(apply_costs(gross, scores, bp, args.borrow))["final_usd"]
+                          for bp in (0, 1, 2, 5, 10)})
+    sweep.insert(0, "rule", RULES + REFERENCES)
+    print("\n  Final $ by trading cost:")
+    print(sweep.round(0).to_string(index=False))
     scores.to_csv(out / "deploy_scores.csv", index=False)
+    gross.to_csv(out / "deploy_picks_gross.csv", index=False)
     picks.to_csv(out / "deploy_picks.csv", index=False)
     dep.to_csv(out / "deploy_summary.csv", index=False)
+    sweep.to_csv(out / "deploy_cost_sweep.csv", index=False)
 
     wc = None
     if args.grid:

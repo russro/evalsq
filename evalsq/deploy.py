@@ -22,6 +22,10 @@ COMBINED_OF = [r for r in RULES if r != "combined"]
 # Reference lines, not rules a practitioner could run.
 REFERENCES = ["oracle", "never_switch", "always_long"]
 START = 100_000
+# Default frictions for SPY: 1bp per unit of position traded (half spread + slippage, no commission),
+# 0.5%/yr to borrow shares while short.
+COST_BP = 1.0
+BORROW = 0.005
 
 
 def month_starts(df: pd.DataFrame, start_year: int) -> list[int]:
@@ -55,7 +59,8 @@ def _score_month(df: pd.DataFrame, zoo: dict, pos0: int, pos1: int, lag: int,
         s_pred, s_proba = m.predict(sel[feats]), m.predict_proba(sel[feats])[:, 1]
         l_pred = m.predict(live[feats])
         strat_sel = np.where(s_pred == 1, 1, -1) * sel["next_ret"].values
-        strat_live = np.where(l_pred == 1, 1, -1) * live["next_ret"].values
+        pos = np.where(l_pred == 1, 1, -1)
+        strat_live = pos * live["next_ret"].values
         rows.append({
             "month": month, "model": name,
             **_metrics(s_pred, s_proba, sel),
@@ -63,6 +68,11 @@ def _score_month(df: pd.DataFrame, zoo: dict, pos0: int, pos1: int, lag: int,
             "month_acc": float((l_pred == live["target"].values).mean()),
             "month_ret": float(np.prod(1 + strat_live) - 1),
             "spy_ret": spy,
+            # enough to charge costs later without keeping the daily series (see apply_costs)
+            "flips": int((np.diff(pos) != 0).sum()),
+            "short_days": int((pos == -1).sum()),
+            "first_pos": int(pos[0]),
+            "last_pos": int(pos[-1]),
         })
     return rows
 
@@ -106,6 +116,32 @@ def apply_rules(scores: pd.DataFrame) -> pd.DataFrame:
     spy = scores.groupby("month")["spy_ret"].first()
     long = pd.DataFrame({"month": spy.index, "rule": "always_long", "model": "SPY", "month_ret": spy.values})
     return pd.concat([picks, long], ignore_index=True)
+
+
+def apply_costs(picks: pd.DataFrame, scores: pd.DataFrame, cost_bp: float = COST_BP,
+                borrow: float = BORROW) -> pd.DataFrame:
+    """Same picks, with month_ret net of trading and borrow costs.
+
+    Trades are paid at the close, before the next day's return: value *= (1 - c) per unit of
+    position traded. A long/short flip is 2 units. Months are joined in order per rule, so a swap whose new
+    model opens on the other side pays a flip too, and month one pays to enter from cash.
+    While short, value *= 1 - borrow/252 per day. Both are multiplicative, so they factor
+    out of the gross month return exactly.
+    """
+    c, b = cost_bp / 1e4, borrow / 252
+    info = scores.set_index(["month", "model"])[["flips", "short_days", "first_pos", "last_pos"]]
+    out = []
+    for rule, g in picks.groupby("rule", sort=False):
+        g = g.sort_values("month").copy()
+        if rule == "always_long":  # buy once, hold
+            f = pd.DataFrame({"flips": 0, "short_days": 0, "first_pos": 1, "last_pos": 1}, index=g.index)
+        else:
+            f = info.loc[list(zip(g["month"], g["model"]))].set_index(g.index)
+        enter = (f["first_pos"] - f["last_pos"].shift(fill_value=0)).abs()
+        units = 2 * f["flips"] + enter
+        g["month_ret"] = (1 + g["month_ret"]) * (1 - c) ** units * (1 - b) ** f["short_days"] - 1
+        out.append(g)
+    return pd.concat(out).sort_index()
 
 
 def equity(picks: pd.DataFrame, start: float = START) -> pd.DataFrame:

@@ -5,7 +5,7 @@ from sklearn.linear_model import LogisticRegression
 
 from evalsq.data import FEATURES
 from evalsq.heuristics import combined
-from evalsq.deploy import (COMBINED_OF, RULES, START, apply_rules, deploy_summary, equity, month_starts,
+from evalsq.deploy import (COMBINED_OF, RULES, START, apply_costs, apply_rules, deploy_summary, equity, month_starts,
                            optimal_k, visible_end, walk_forward, winners_curse,
                            winners_curse_monthly)
 from evalsq.models import make_grid, make_zoo
@@ -137,3 +137,51 @@ def test_optimal_k_picks_best_deployed():
     opt = optimal_k(m, window=2)
     assert opt["opt_k"].tolist() == [5, 1]
     assert np.isnan(opt["opt_k_vol"].iloc[0]) and opt["opt_k_vol"].iloc[1] > 0
+
+
+def _cost_scores():
+    """Two months, two models, with hand-set positions."""
+    return pd.DataFrame({
+        "month": ["2020-01", "2020-01", "2020-02", "2020-02"], "model": ["A", "B", "A", "B"],
+        "month_ret": [0.1, 0.0, 0.0, 0.2], "spy_ret": [0.01, 0.01, 0.02, 0.02],
+        "flips": [1, 0, 0, 2], "short_days": [3, 0, 0, 5],
+        "first_pos": [1, 1, 1, -1], "last_pos": [-1, 1, 1, -1],
+    })
+
+
+def test_apply_costs_zero_is_gross():
+    s = _cost_scores()
+    picks = pd.DataFrame({"month": ["2020-01", "2020-02"], "rule": "x", "model": ["A", "B"], "month_ret": [0.1, 0.2]})
+    pd.testing.assert_frame_equal(apply_costs(picks, s, 0, 0), picks)
+
+
+def test_apply_costs_charges_entry_flips_swaps_and_borrow():
+    s = _cost_scores()
+    picks = pd.DataFrame({"month": ["2020-01", "2020-02"], "rule": "x", "model": ["A", "B"], "month_ret": [0.1, 0.2]})
+    net = apply_costs(picks, s, cost_bp=10, borrow=0.252)["month_ret"].tolist()
+    c, b = 1e-3, 1e-3
+    # month 1: enter from cash (1 unit) + 1 flip (2 units), 3 short days
+    # month 2: A ends -1, B opens -1 so no swap trade; 2 flips (4 units), 5 short days
+    assert net == pytest.approx([1.1 * (1 - c) ** 3 * (1 - b) ** 3 - 1, 1.2 * (1 - c) ** 4 * (1 - b) ** 5 - 1])
+
+
+def test_apply_costs_swap_to_other_side_pays_flip():
+    s = _cost_scores()
+    picks = pd.DataFrame({"month": ["2020-01", "2020-02"], "rule": "x", "model": ["B", "B"], "month_ret": [0.0, 0.2]})
+    net = apply_costs(picks, s, cost_bp=10, borrow=0)["month_ret"].tolist()
+    # B ends month 1 long, opens month 2 short: 2 units at the boundary + 4 inside
+    assert net[1] == pytest.approx(1.2 * (1 - 1e-3) ** 6 - 1)
+
+
+def test_apply_costs_always_long_pays_once():
+    picks = pd.DataFrame({"month": ["2020-01", "2020-02"], "rule": "always_long", "model": "SPY", "month_ret": [0.01, 0.02]})
+    net = apply_costs(picks, _cost_scores(), cost_bp=10, borrow=1.0)["month_ret"].tolist()
+    assert net == pytest.approx([1.01 * (1 - 1e-3) - 1, 0.02])
+
+
+def test_costs_never_help(featured_df):
+    s = walk_forward(featured_df, SMALL_ZOO, 2021)
+    gross = apply_rules(s)
+    net = apply_costs(gross, s)
+    assert (net["month_ret"] <= gross["month_ret"] + 1e-12).all()
+    assert (s["flips"] >= 0).all() and set(s["first_pos"]) <= {-1, 1}

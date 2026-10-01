@@ -19,7 +19,7 @@ def test_cli_end_to_end(tmp_path, featured_df):
     main(["--data", str(data), "--out", str(out), "--figs", str(figs), "--cutoff", "2021", "--grid", "3",
           "--bogle", str(bogle)])
     for f in ["h1_validity", "h1_rolling", "h1_summary", "h2_temporal", "h3_meta",
-              "h3_meta_monthly", "deploy_scores", "deploy_picks", "deploy_summary", "grid_scores", "winners_curse", "winners_curse_monthly", "optimal_k"]:
+              "h3_meta_monthly", "deploy_scores", "deploy_picks", "deploy_picks_gross", "deploy_summary", "deploy_cost_sweep", "grid_scores", "winners_curse", "winners_curse_monthly", "optimal_k"]:
         assert not pd.read_csv(out / f"{f}.csv").empty
     pngs = sorted(p.name for p in figs.glob("*.png"))
     assert pngs == ["fig1_setup.png", "fig2_h1_validity.png", "fig3_h2_holdout.png", "fig4_h3_meta.png",
