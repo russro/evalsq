@@ -1,6 +1,6 @@
 # evalsq
 
-Code for the eval2 workshop talk (October 10, 2026). It runs three simple checks that ask whether a benchmark score still tracks the value it is meant to stand in for. The example predicts the next-day direction of SPY (2010 to 2025) with a logistic regression and a random forest, where the benchmark is a classification metric and the value is the Sharpe ratio of a long/short strategy that trades each prediction.
+Code for the eval2 workshop talk (October 1, 2026). It runs three simple checks that ask whether a benchmark score still tracks the value it is meant to stand in for. The example predicts the next-day direction of SPY (2010 to 2025) with a zoo of 8 models (LogReg, LogReg-mom, RF, ExtraTrees-vol, GBM, GBM-mom, kNN, MLP, each on its own feature subset), where the benchmark is a classification metric and the value is the $ earned by a long/short strategy that trades each prediction. H1a (metric vs Sharpe) uses the logistic regression and random forest; everything else deploys from the full zoo.
 
 ## Quick start
 
@@ -38,11 +38,11 @@ Correlation between each candidate metric and the strategy's Sharpe ratio, compu
 
 ![h2](figures/fig3_h2_folds.png)
 
-Does the best eval stay the best? The monthly net returns of each selection rule (from the H1b walk-forward) are compounded within blocked time folds of one and two calendar years, and the rules are ranked within each fold. Accuracy on downtrend days is best in 5 of 8 years and 2 of 4 two-year blocks, but the previous fold's best rule is best again in only 2 of 7 one-year transitions (29%, chance 17%) and 1 of 3 two-year transitions.
+Does the best eval stay the best? The monthly net returns of each selection rule (from the H1b walk-forward) are compounded within blocked time folds of 6 months, 1 year and 2 years (never shuffled), and the rules are ranked within each fold. The previous fold's best rule is best again in only 13% of 6-month transitions (below chance, 17%), 29% of 1-year and 1 of 3 two-year transitions. Accuracy on downtrend days gets steadier as the window grows (average rank 2.2, 1.9, 1.5) and is first or second in every 2-year block.
 
 ![h2b](figures/fig3b_h2_regret.png)
 
-Regret is the return lost per fold against the best rule in hindsight, averaged over folds 2 onward. Following the previous fold's winner costs 7.2 points a year, less than a random rule (10.9) but more than always using accuracy on downtrend days (3.1), though choosing that fixed rule is itself a hindsight decision. With 4 to 8 folds this is a stability check, not a significance test.
+Regret is the return lost per fold against the best rule in hindsight, averaged over folds 2 onward. Following the previous fold's winner costs 7.3 points per half-year, 7.2 per year and 15.7 per two years. At 6 months that is worse than a random rule (6.2); at 1 and 2 years it beats random (10.9, 22.4). Always using accuracy on downtrend days stays well ahead (3.1, 3.1, 4.7), though choosing that fixed rule is itself a hindsight decision. With 4 to 16 folds this is a stability check, not a significance test.
 
 ### H3. Complementarity
 
@@ -62,7 +62,7 @@ A linear model that predicts the random forest's accuracy from the mean volatili
 
 ### Deployment and the Bogleheads line
 
-`fig5_deploy.png` shows portfolio value under each selection rule, including `combined` (the model with the best mean rank over the other five rules that month). `fig5b_deploy_bogle.png` adds a Bogleheads three-fund portfolio (60% VTI, 20% VXUS, 20% BND, rebalanced monthly; `--no-bogle` skips it). The combined rule ends at $177k, below accuracy alone ($222k). The three-fund portfolio ends at $215k, under always-long SPY ($287k) because of the bond and international share.
+`fig5_deploy.png` shows portfolio value under each selection rule, including `combined` (the model with the best mean rank over the other five rules that month). `fig5b_deploy_bogle.png` adds a Bogleheads three-fund portfolio (60% VTI, 20% VXUS, 20% BND, rebalanced monthly; `--no-bogle` skips it). Net of costs, the combined rule ends at $167k, below accuracy alone ($209k). The three-fund portfolio ends at $215k, under always-long SPY ($287k) because of the bond and international share.
 
 ### Learned benchmark
 
@@ -71,6 +71,10 @@ A linear model that predicts the random forest's accuracy from the mean volatili
 Instead of picking a metric by hand, a ridge regression learns which bench signals predict a model's next-month return (`evalsq/learned.py`). Inputs are the six signals, demeaned across the zoo each month; the target is the model's return minus the zoo average, so the month effect drops out. No model identity goes in. It trains on walk-forward months from 2012-08 (`--meta-start`, these months do not change any other result) and deploys from 2018, with a two-month gap so it only sees returns that are already visible. Three modes: refit monthly on all history, refit monthly on the last 36 months, or fit once on the first 36 months and freeze.
 
 Net of costs it ends at $177k (all history), $191k (rolling) and $149k (frozen), all below accuracy alone ($209k), bear-day accuracy ($320k) and never switching ($344k). Its monthly rank correlation with realised returns is about zero (leave-one-model-out 0.04, t = 0.9). The all-history fit settles on accuracy minus uptrend accuracy, close to bear-day accuracy. The frozen fit leans on lagged P&L, a weight the rolling fit turns negative after 2023, so drift breaks the static version.
+
+![learned-oos](figures/fig10b_learned_oos.png)
+
+Out of sample (freeze the ridge on 2012-2021, deploy 2022-2025) it ends at $120k, 4th of 8, below AUC ($157k), bear-day accuracy ($151k) and always long ($151k).
 
 ### Backup: winner's curse spread and best pool size
 
@@ -85,10 +89,10 @@ The pool size whose winner deployed best, month by month, with its 12-month mean
 ## Code
 
 - `evalsq/data.py` downloads SPY and builds the features (returns, moving average ratios, volatility) and the next-day target.
-- `evalsq/models.py` defines the two models. New models go in `make_models()`.
+- `evalsq/models.py` defines the two H1a models (`make_models()`) and the 8-model deployment zoo (`make_zoo()`). New models go in `make_zoo()`.
 - `evalsq/heuristics.py` implements H1 and H3; `evalsq/deploy.py` implements the monthly walk-forward and H2 (`h2_selectors`).
 - `evalsq/deploy.py` runs the monthly walk-forward, the selection rules and the winner's curse (`winners_curse_monthly`, `optimal_k`).
 - `evalsq/learned.py` is the learned benchmark: ridge meta-model, retraining modes, leave-one-model-out check.
 - `evalsq/plots.py` draws the figures above.
 - `evalsq/cli.py` is the entry point.
-- `slides/outline.md` is the first-pass slide outline. `slides/mockups.py` draws the diagram mockups (`slides/mock_*.png`) to redraw in draw.io.
+- `slides/outline.md` is the slide outline (final text per slide). `slides/mockups.py` draws the diagram mockups (`slides/mock_*.png`) to redraw in draw.io.
